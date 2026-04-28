@@ -32,13 +32,14 @@ void DAC_Init(void) {
     // 3. Configure SPI1
     // Master, Mode 0 (CPOL=0, CPHA=0), MSB First, 8-bit Data
     // BaudRate = PCLK2 / 16 (72MHz / 16 = 4.5MHz) -> 0x3 << 3
-    SPI1->CR1 = SPI_CR1_MSTR | (0x3 << 3);
+    // SSM=1, SSI=1 to use PA4 as GPIO CS without MODF error
+    SPI1->CR1 = SPI_CR1_MSTR | (0x3 << 3) | SPI_CR1_SSM | SPI_CR1_SSI;
     SPI1->CR1 |= SPI_CR1_SPE; // Enable SPI
 }
 
 /**
  * @brief  Send a 24-bit frame to the selected DAC
- * @param  cs_mask: BSRR mask for CS pin (bit 4 for PA4, etc)
+ * @param  cs_pin: Pin mask (e.g. 1 << 4)
  * @param  is_pa: 1 for GPIOA, 0 for GPIOB
  * @param  reg: 8-bit register address
  * @param  data: 16-bit data
@@ -76,16 +77,16 @@ static void DAC_WriteRegister(uint32_t cs_pin, int is_pa, uint8_t reg, uint16_t 
 
 /**
  * @brief  Update the DAC output current code
- * @param  channel: 1 for Speed (PA4), 2 for Direction (PB0)
+ * @param  channel: 1 for Speed (CS1/PA4), 2 for Direction (CS2/PB0)
  * @param  code: 16-bit DAC code
  */
 void DAC_UpdateCode(int channel, uint16_t code) {
     // Register 0x01 is DACCODE per DAC161S997 datasheet
     if (channel == 1) {
-        // DAC1_nCS is PB0
-        DAC_WriteRegister(1 << 0, 0, 0x01, code);
-    } else {
-        // DAC2_nCS is PA4
+        // DAC1_nCS is PA4 (CS1)
         DAC_WriteRegister(1 << 4, 1, 0x01, code);
+    } else {
+        // DAC2_nCS is PB0 (CS2)
+        DAC_WriteRegister(1 << 0, 0, 0x01, code);
     }
 }

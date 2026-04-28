@@ -20,6 +20,32 @@ void SysTick_Handler(void) {
     sys_tick++;
 }
 
+/**
+ * @brief  System Clock Configuration for 16MHz HSE -> 72MHz SYSCLK
+ */
+void SystemClock_Config(void) {
+    // 1. Enable HSE
+    RCC->CR |= RCC_CR_HSEON;
+    while (!(RCC->CR & RCC_CR_HSERDY));
+
+    // 2. Configure Flash Latency (2 wait states for 72MHz)
+    FLASH->ACR |= FLASH_ACR_LATENCY_2 | FLASH_ACR_PRFTBE;
+
+    // 3. Configure PLL: HSE/2 * 9 = 16/2 * 9 = 72MHz
+    RCC->CFGR |= RCC_CFGR_PLLSRC_HSE | RCC_CFGR_PLLXTPRE_HSE_DIV2 | RCC_CFGR_PLLMULL9;
+    
+    // 4. Configure Bus Prescalers: HCLK=72MHz, PCLK2=72MHz, PCLK1=36MHz
+    RCC->CFGR |= RCC_CFGR_HPRE_DIV1 | RCC_CFGR_PPRE2_DIV1 | RCC_CFGR_PPRE1_DIV2;
+
+    // 5. Enable PLL
+    RCC->CR |= RCC_CR_PLLON;
+    while (!(RCC->CR & RCC_CR_PLLRDY));
+
+    // 6. Select PLL as system clock source
+    RCC->CFGR |= RCC_CFGR_SW_PLL;
+    while ((RCC->CFGR & RCC_CFGR_SWS_PLL) != RCC_CFGR_SWS_PLL);
+}
+
 void SysTick_Init(void) {
     // 72MHz core clock, 1ms interrupt
     SysTick->LOAD = 72000 - 1;
@@ -43,6 +69,7 @@ uint16_t MapValueToDAC(float val, float max_val) {
 }
 
 int main(void) {
+    SystemClock_Config();
     SysTick_Init();
     DAC_Init();
     Sensor_Init();
@@ -88,13 +115,6 @@ int main(void) {
             }
         }
         
-        // 2. LED Indication Task
-        // sensor_ok: Fast blink (toggle every 200ms)
-        // error: Slow blink (toggle every 1000ms)
-        uint32_t led_period = sensor_ok ? 200 : 1000;
-        if (now - led_toggle_time >= led_period) {
-            led_toggle_time = now;
-            LED_Toggle();
-        }
+        // 2. LED Indication Task removed per request
     }
 }

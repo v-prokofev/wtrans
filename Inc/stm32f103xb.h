@@ -19,6 +19,17 @@ typedef struct {
 } RCC_TypeDef;
 
 typedef struct {
+  __IO uint32_t ACR;
+  __IO uint32_t KEYR;
+  __IO uint32_t OPTKEYR;
+  __IO uint32_t SR;
+  __IO uint32_t CR;
+  __IO uint32_t AR;
+  __IO uint32_t OBR;
+  __IO uint32_t WRPR;
+} FLASH_TypeDef;
+
+typedef struct {
   __IO uint32_t CRL;
   __IO uint32_t CRH;
   __IO uint32_t IDR;
@@ -83,6 +94,7 @@ typedef struct {
 #define USART2_BASE           (APB1PERIPH_BASE + 0x4400UL)
 #define USART3_BASE           (APB1PERIPH_BASE + 0x4800UL)
 #define RCC_BASE              (AHBPERIPH_BASE + 0x1000UL)
+#define FLASH_BASE            (AHBPERIPH_BASE + 0x2000UL)
 #define DMA1_BASE             (AHBPERIPH_BASE + 0x0000UL)
 #define DMA1_Channel6_BASE    (DMA1_BASE + 0x08 + 0x14 * 5) // 0x6C
 
@@ -96,6 +108,7 @@ typedef struct {
 #define USART2                ((USART_TypeDef *) USART2_BASE)
 #define USART3                ((USART_TypeDef *) USART3_BASE)
 #define DMA1_Channel6         ((DMA_Channel_TypeDef *) DMA1_Channel6_BASE)
+#define FLASH                 ((FLASH_TypeDef *) FLASH_BASE)
 #define AFIO                  ((AFIO_TypeDef *) AFIO_BASE)
 #define SysTick               ((SysTick_Type *) SysTick_BASE)
 
@@ -117,8 +130,27 @@ typedef struct {
 
 #define SPI_CR1_MSTR        (1 << 2)
 #define SPI_CR1_SPE         (1 << 6)
+#define SPI_CR1_SSI         (1 << 8)
+#define SPI_CR1_SSM         (1 << 9)
 #define SPI_SR_TXE          (1 << 1)
 #define SPI_SR_RXNE         (1 << 0)
 #define SPI_SR_BSY          (1 << 7)
+
+#define RCC_CR_HSEON        (1 << 16)
+#define RCC_CR_HSERDY       (1 << 17)
+#define RCC_CR_PLLON        (1 << 24)
+#define RCC_CR_PLLRDY       (1 << 25)
+
+#define RCC_CFGR_SW_PLL      (2 << 0)
+#define RCC_CFGR_SWS_PLL     (2 << 2)
+#define RCC_CFGR_HPRE_DIV1   (0 << 4)
+#define RCC_CFGR_PPRE1_DIV2  (4 << 8)
+#define RCC_CFGR_PPRE2_DIV1  (0 << 11)
+#define RCC_CFGR_PLLSRC_HSE  (1 << 16)
+#define RCC_CFGR_PLLXTPRE_HSE_DIV2 (1 << 17)
+#define RCC_CFGR_PLLMULL9    (7 << 18)
+
+#define FLASH_ACR_LATENCY_2  (2 << 0)
+#define FLASH_ACR_PRFTBE     (1 << 4)
 
 #endif

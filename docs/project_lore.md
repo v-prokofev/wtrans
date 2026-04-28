@@ -3,7 +3,7 @@
 ## Rules and Guidelines
 1. **Source of Truth**: All critical technical decisions, pinouts, and logic rules must be documented in `docs/project_spec.md` or `docs/project_lore.md`. 
 2. **Persistence**: Any new implementation details or architectural shifts decided during the conversation must be recorded back into these files.
-3. **No Libraries**: The project uses pure C with direct register access. No HAL, LL, or other high-level libraries are allowed, unless explicitly requested for specific external modules.
+3. **HAL usage**: The project now uses STM32 HAL (Hardware Abstraction Layer) for peripheral control.
 4. **Code Structure**: Hardware-specific register manipulations must be isolated from the high-level business logic.
 
 ## Key Decisions
@@ -20,3 +20,7 @@
     - Use DMA for sensor data reception to avoid CPU overhead and missing characters during SPI transactions.
 - **[2026-04-27] Documentation**:
     - Detailed hardware connection and loop testing (multimeter) guides are kept in `docs/connection_guide.md`.
+- [2026-04-28] Timer Architecture:
+    - **Low-priority Timer (TIM3)**: 5 Hz (200ms period). Handles heartbeat LED (PA9) and debug console output (UART3).
+    - **High-priority Timer (TIM2)**: 1 Hz (1s period). Handles sensor polling (UART2).
+    - **Optional DAC Update Timer**: If synchronization is critical, a separate timer or a faster tick will be used to update DAC outputs.

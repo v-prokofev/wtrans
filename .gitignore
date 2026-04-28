@@ -1,34 +1,41 @@
+# Build directories
+**/Debug/
+**/Release/
+**/bin/
+**/obj/
+
 # Build artifacts
-Debug/
-Release/
-build/
-bin/
-obj/
-*.o
-*.d
 *.elf
-*.bin
 *.hex
+*.bin
 *.map
 *.lst
+*.o
+*.d
+*.su
 
-# IDE - VSCode
-.vscode/
-*.code-workspace
-
-# IDE - Keil / IAR / CubeIDE
-*.uvopt*
-*.uvproj*
-*.jlink
+# IDE files (STM32CubeIDE / Eclipse)
+**/.settings/
 *.launch
-.settings/
-.project
-.cproject
 
-# OS specific
-.DS_Store
-Thumbs.db
+# CubeMX artifacts
+.mxproject
 
-# Backup files
+# Other
 *.bak
 *~
+*.zip
+node_modules/
+.DS_Store
+
+# PCB / CAD
+**/Project\ Outputs/
+**/History/
+**/__Preview/
+*.PcbDoc.htm
+*.SchDoc.htm
+*.kicad_pcb-bak
+*.kicad_sch-bak
+fp-info-cache
+_autosave-*
+*.lck

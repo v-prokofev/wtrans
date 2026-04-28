@@ -15,6 +15,9 @@
 #define MAX_DIR      360.0f
 
 volatile uint32_t sys_tick = 0;
+volatile int sensor_ok = 0;
+volatile uint32_t last_poll_time = 0;
+volatile int sensor_state = 0; // 0: Idle, 1: Waiting for response
 
 void SysTick_Handler(void) {
     sys_tick++;
@@ -68,25 +71,16 @@ uint16_t MapValueToDAC(float val, float max_val) {
     return (uint16_t)(CODE_4MA + (val / max_val) * (CODE_20MA - CODE_4MA));
 }
 
-int main(void) {
-    SystemClock_Config();
-    SysTick_Init();
-    DAC_Init();
-    Sensor_Init();
-    Debug_Init();
-    LED_Init();
-    
-    Debug_Printf("--- DVU-01 Converter Started ---\r\n");
-    
-    int sensor_ok = 0;
-    uint32_t last_poll_time = 0;
-    uint32_t led_toggle_time = 0;
-    int sensor_state = 0; // 0: Idle, 1: Waiting for response
-    
-    while (1) {
+/**
+ * @brief  TIM2 Handler (High Priority): Main Processing Logic
+ */
+void TIM2_IRQHandler(void) {
+    if (TIM2->SR & TIM_SR_UIF) {
+        TIM2->SR &= ~TIM_SR_UIF;
+
         uint32_t now = GetTick();
         
-        // 1. Sensor Polling Task
+        // 1. Sensor Polling Logic
         if (sensor_state == 0) {
             if (now - last_poll_time >= 1000) { // 1 Hz polling rate
                 last_poll_time = now;
@@ -114,7 +108,63 @@ int main(void) {
                 sensor_state = 0; // Return to idle state
             }
         }
-        
-        // 2. LED Indication Task removed per request
+    }
+}
+
+/**
+ * @brief  TIM3 Handler (Low Priority): LED Indication
+ */
+void TIM3_IRQHandler(void) {
+    if (TIM3->SR & TIM_SR_UIF) {
+        TIM3->SR &= ~TIM_SR_UIF;
+
+        static uint32_t led_cnt = 0;
+        uint32_t led_period = sensor_ok ? 20 : 100; // 200ms or 1000ms at 10ms tick
+        if (++led_cnt >= led_period) {
+            led_cnt = 0;
+            LED_Toggle();
+        }
+    }
+}
+
+void Timers_Init(void) {
+    // Enable Clocks
+    RCC->APB1ENR |= RCC_APB1ENR_TIM2EN | RCC_APB1ENR_TIM3EN;
+
+    // Configure TIM2 (High Priority, 10ms tick)
+    TIM2->PSC = 36000 - 1; // 1kHz
+    TIM2->ARR = 10 - 1;    // 100Hz (10ms)
+    TIM2->DIER |= TIM_DIER_UIE;
+    TIM2->CR1 |= TIM_CR1_CEN;
+
+    // Configure TIM3 (Low Priority, 10ms tick)
+    TIM3->PSC = 36000 - 1;
+    TIM3->ARR = 10 - 1;
+    TIM3->DIER |= TIM_DIER_UIE;
+    TIM3->CR1 |= TIM_CR1_CEN;
+
+    // NVIC Priorities: TIM2 (0 - Highest), TIM3 (1 - Lower)
+    NVIC->IP[TIM2_IRQn] = (0 << 4);
+    NVIC->IP[TIM3_IRQn] = (1 << 4);
+
+    // Enable IRQs
+    NVIC->ISER[TIM2_IRQn >> 5] = (1 << (TIM2_IRQn & 0x1F));
+    NVIC->ISER[TIM3_IRQn >> 5] = (1 << (TIM3_IRQn & 0x1F));
+}
+
+int main(void) {
+    SystemClock_Config();
+    SysTick_Init();
+    DAC_Init();
+    Sensor_Init();
+    Debug_Init();
+    LED_Init();
+    Timers_Init();
+    
+    Debug_Printf("--- DVU-01 Converter Started (IRQ mode) ---\r\n");
+    
+    while (1) {
+        // Main loop is empty, all logic in IRQs
+        __asm("WFI");
     }
 }

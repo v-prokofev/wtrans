@@ -82,6 +82,45 @@ typedef struct {
   __IO uint32_t CALIB;
 } SysTick_Type;
 
+typedef struct {
+  __IO uint32_t CR1;
+  __IO uint32_t CR2;
+  __IO uint32_t SMCR;
+  __IO uint32_t DIER;
+  __IO uint32_t SR;
+  __IO uint32_t EGR;
+  __IO uint32_t CCMR1;
+  __IO uint32_t CCMR2;
+  __IO uint32_t CCER;
+  __IO uint32_t CNT;
+  __IO uint32_t PSC;
+  __IO uint32_t ARR;
+  __IO uint32_t RCR;
+  __IO uint32_t CCR1;
+  __IO uint32_t CCR2;
+  __IO uint32_t CCR3;
+  __IO uint32_t CCR4;
+  __IO uint32_t BDTR;
+  __IO uint32_t DCR;
+  __IO uint32_t DMAR;
+} TIM_TypeDef;
+
+typedef struct {
+  __IO uint32_t ISER[8];
+       uint32_t RESERVED0[24];
+  __IO uint32_t ICER[8];
+       uint32_t RSERVED1[24];
+  __IO uint32_t ISPR[8];
+       uint32_t RESERVED2[24];
+  __IO uint32_t ICPR[8];
+       uint32_t RESERVED3[24];
+  __IO uint32_t IABR[8];
+       uint32_t RESERVED4[56];
+  __IO uint8_t  IP[240];
+       uint32_t RESERVED5[644];
+  __IO uint32_t STIR;
+} NVIC_Type;
+
 #define PERIPH_BASE           0x40000000UL
 #define APB1PERIPH_BASE       PERIPH_BASE
 #define APB2PERIPH_BASE       (PERIPH_BASE + 0x10000UL)
@@ -91,6 +130,8 @@ typedef struct {
 #define GPIOA_BASE            (APB2PERIPH_BASE + 0x0800UL)
 #define GPIOB_BASE            (APB2PERIPH_BASE + 0x0C00UL)
 #define SPI1_BASE             (APB2PERIPH_BASE + 0x3000UL)
+#define TIM2_BASE             (APB1PERIPH_BASE + 0x0000UL)
+#define TIM3_BASE             (APB1PERIPH_BASE + 0x0400UL)
 #define USART2_BASE           (APB1PERIPH_BASE + 0x4400UL)
 #define USART3_BASE           (APB1PERIPH_BASE + 0x4800UL)
 #define RCC_BASE              (AHBPERIPH_BASE + 0x1000UL)
@@ -99,6 +140,7 @@ typedef struct {
 #define DMA1_Channel6_BASE    (DMA1_BASE + 0x08 + 0x14 * 5) // 0x6C
 
 #define SCS_BASE              (0xE000E000UL)
+#define NVIC_BASE             (SCS_BASE + 0x0100UL)
 #define SysTick_BASE          (SCS_BASE +  0x0010UL)
 
 #define RCC                   ((RCC_TypeDef *) RCC_BASE)
@@ -111,6 +153,9 @@ typedef struct {
 #define FLASH                 ((FLASH_TypeDef *) FLASH_BASE)
 #define AFIO                  ((AFIO_TypeDef *) AFIO_BASE)
 #define SysTick               ((SysTick_Type *) SysTick_BASE)
+#define NVIC                  ((NVIC_Type *) NVIC_BASE)
+#define TIM2                  ((TIM_TypeDef *) TIM2_BASE)
+#define TIM3                  ((TIM_TypeDef *) TIM3_BASE)
 
 // Bits
 #define RCC_APB2ENR_IOPAEN  (1 << 2)
@@ -118,6 +163,8 @@ typedef struct {
 #define RCC_APB2ENR_SPI1EN  (1 << 12)
 #define RCC_APB1ENR_USART2EN (1 << 17)
 #define RCC_APB1ENR_USART3EN (1 << 18)
+#define RCC_APB1ENR_TIM2EN   (1 << 0)
+#define RCC_APB1ENR_TIM3EN   (1 << 1)
 #define RCC_AHBENR_DMA1EN   (1 << 0)
 
 #define USART_SR_TXE         (1 << 7)
@@ -152,5 +199,12 @@ typedef struct {
 
 #define FLASH_ACR_LATENCY_2  (2 << 0)
 #define FLASH_ACR_PRFTBE     (1 << 4)
+
+#define TIM_CR1_CEN          (1 << 0)
+#define TIM_DIER_UIE         (1 << 0)
+#define TIM_SR_UIF           (1 << 0)
+
+#define TIM2_IRQn             28
+#define TIM3_IRQn             29
 
 #endif

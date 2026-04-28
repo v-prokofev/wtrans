@@ -1,0 +1,34 @@
+# Build artifacts
+Debug/
+Release/
+build/
+bin/
+obj/
+*.o
+*.d
+*.elf
+*.bin
+*.hex
+*.map
+*.lst
+
+# IDE - VSCode
+.vscode/
+*.code-workspace
+
+# IDE - Keil / IAR / CubeIDE
+*.uvopt*
+*.uvproj*
+*.jlink
+*.launch
+.settings/
+.project
+.cproject
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*~

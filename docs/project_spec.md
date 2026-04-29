@@ -12,8 +12,8 @@
 ### 1.2 RS-485 (UART3) - Debug/Config (X3)
 - **PB10**: TX
 - **PB11**: RX
-- **PB12**: nRE
-- **PB13**: DE
+- **PB13**: nRE
+- **PB14**: DE
 - **PA4**: DAC1_nCS (Chip Select for Speed DAC)
 - **PA5**: SCK (Serial Clock)
 - **PA6**: MISO (Master In Slave Out - for status)

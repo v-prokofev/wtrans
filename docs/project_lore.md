@@ -14,8 +14,8 @@
     - Wind Direction: 0...360° -> 4...20 mA.
 - **[2026-04-27] Update Rate**: Internal processing and sensor polling at 1 Hz.
 - **[2026-04-27] Interface Mapping**:
-    - X2 Connector (RS-485) -> Connected to Sensor (DVU-01). Controlled via UART2 + DMA1 Ch6.
-    - X3 Connector (RS-485) -> Debug/Configuration. Controlled via UART3 (115200 8N1).
+    - X2 Connector (RS-485) -> Connected to Sensor (DVU-01). Controlled via UART2 + DMA1 Ch6. Pins: PA0(nRE), PA1(DE).
+    - X3 Connector (RS-485) -> Debug/Configuration. Controlled via UART3 (115200 8N1). Pins: PB13(nRE), PB14(DE).
 - **[2026-04-27] DMA Strategy**:
     - Use DMA for sensor data reception to avoid CPU overhead and missing characters during SPI transactions.
 - **[2026-04-27] Documentation**:

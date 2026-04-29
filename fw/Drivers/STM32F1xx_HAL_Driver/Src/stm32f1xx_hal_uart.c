@@ -1412,16 +1412,8 @@ HAL_StatusTypeDef HAL_UART_Transmit_DMA(UART_HandleTypeDef *huart, const uint8_t
 
     /* Enable the UART transmit DMA channel */
     tmp = (const uint32_t *)&pData;
-    if (HAL_DMA_Start_IT(huart->hdmatx, *(const uint32_t *)tmp, (uint32_t)&huart->Instance->DR, Size) != HAL_OK)
-    {
-      /* Set error code to DMA */
-      huart->ErrorCode = HAL_UART_ERROR_DMA;
+    HAL_DMA_Start_IT(huart->hdmatx, *(const uint32_t *)tmp, (uint32_t)&huart->Instance->DR, Size);
 
-      /* Restore huart->gState to ready */
-      huart->gState = HAL_UART_STATE_READY;
-
-      return HAL_ERROR;
-    }
     /* Clear the TC flag in the SR register by writing 0 to it */
     __HAL_UART_CLEAR_FLAG(huart, UART_FLAG_TC);
 
@@ -2486,7 +2478,7 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
      If Reception till IDLE event has been selected : */
   if ((huart->ReceptionType == HAL_UART_RECEPTION_TOIDLE)
       && ((isrflags & USART_SR_IDLE) != 0U)
-      && ((cr1its & USART_CR1_IDLEIE) != 0U))
+      && ((cr1its & USART_SR_IDLE) != 0U))
   {
     __HAL_UART_CLEAR_IDLEFLAG(huart);
 
@@ -2536,28 +2528,6 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
         /*Call legacy weak Rx Event callback*/
         HAL_UARTEx_RxEventCallback(huart, (huart->RxXferSize - huart->RxXferCount));
 #endif /* USE_HAL_UART_REGISTER_CALLBACKS */
-      }
-      else
-      {
-        /* If DMA is in Circular mode, Idle event is to be reported to user
-           even if occurring after a Transfer Complete event from DMA */
-        if (nb_remaining_rx_data == huart->RxXferSize)
-        {
-          if (huart->hdmarx->Init.Mode == DMA_CIRCULAR)
-          {
-            /* Initialize type of RxEvent that correspond to RxEvent callback execution;
-               In this case, Rx Event type is Idle Event */
-            huart->RxEventType = HAL_UART_RXEVENT_IDLE;
-
-#if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
-            /*Call registered Rx Event callback*/
-            huart->RxEventCallback(huart, huart->RxXferSize);
-#else
-            /*Call legacy weak Rx Event callback*/
-            HAL_UARTEx_RxEventCallback(huart, huart->RxXferSize);
-#endif /* (USE_HAL_UART_REGISTER_CALLBACKS) */
-          }
-        }
       }
       return;
     }
@@ -3322,16 +3292,8 @@ HAL_StatusTypeDef UART_Start_Receive_DMA(UART_HandleTypeDef *huart, uint8_t *pDa
 
   /* Enable the DMA stream */
   tmp = (uint32_t *)&pData;
-  if (HAL_DMA_Start_IT(huart->hdmarx, (uint32_t)&huart->Instance->DR, *(uint32_t *)tmp, Size) != HAL_OK)
-  {
-    /* Set error code to DMA */
-    huart->ErrorCode = HAL_UART_ERROR_DMA;
+  HAL_DMA_Start_IT(huart->hdmarx, (uint32_t)&huart->Instance->DR, *(uint32_t *)tmp, Size);
 
-    /* Restore huart->RxState to ready */
-    huart->RxState = HAL_UART_STATE_READY;
-
-    return HAL_ERROR;
-  }
   /* Clear the Overrun flag just before enabling the DMA Rx request: can be mandatory for the second transfer */
   __HAL_UART_CLEAR_OREFLAG(huart);
 
@@ -3398,6 +3360,7 @@ static void UART_DMAAbortOnError(DMA_HandleTypeDef *hdma)
 {
   UART_HandleTypeDef *huart = (UART_HandleTypeDef *)((DMA_HandleTypeDef *)hdma)->Parent;
   huart->RxXferCount = 0x00U;
+  huart->TxXferCount = 0x00U;
 
 #if (USE_HAL_UART_REGISTER_CALLBACKS == 1)
   /*Call registered error callback*/
@@ -3630,16 +3593,15 @@ static HAL_StatusTypeDef UART_EndTransmit_IT(UART_HandleTypeDef *huart)
   */
 static HAL_StatusTypeDef UART_Receive_IT(UART_HandleTypeDef *huart)
 {
-  uint8_t  *pdata8bits = NULL;
-  uint16_t *pdata16bits = NULL;
+  uint8_t  *pdata8bits;
+  uint16_t *pdata16bits;
 
   /* Check that a Rx process is ongoing */
   if (huart->RxState == HAL_UART_STATE_BUSY_RX)
   {
     if ((huart->Init.WordLength == UART_WORDLENGTH_9B) && (huart->Init.Parity == UART_PARITY_NONE))
     {
-      /* Unused pdata8bits */
-      UNUSED(pdata8bits);
+      pdata8bits  = NULL;
       pdata16bits = (uint16_t *) huart->pRxBuffPtr;
       *pdata16bits = (uint16_t)(huart->Instance->DR & (uint16_t)0x01FF);
       huart->pRxBuffPtr += 2U;
@@ -3647,8 +3609,7 @@ static HAL_StatusTypeDef UART_Receive_IT(UART_HandleTypeDef *huart)
     else
     {
       pdata8bits = (uint8_t *) huart->pRxBuffPtr;
-      /* Unused pdata16bits */
-      UNUSED(pdata16bits);
+      pdata16bits  = NULL;
 
       if ((huart->Init.WordLength == UART_WORDLENGTH_9B) || ((huart->Init.WordLength == UART_WORDLENGTH_8B) && (huart->Init.Parity == UART_PARITY_NONE)))
       {

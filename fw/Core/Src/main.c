@@ -22,6 +22,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <string.h>
+#include <stdio.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -137,9 +138,9 @@ int main(void)
   huart2.Init.BaudRate = 9600;
   HAL_UART_Init(&huart2);
 
-  /* Start UART2 DMA Reception (Temporarily commented out to debug HF) */
-  // extern uint8_t sensor_rx_buf[128];
-  // HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+  /* Start UART2 DMA Reception */
+  extern uint8_t sensor_rx_buf[128];
+  HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
 
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
@@ -156,12 +157,27 @@ int main(void)
     /* Check for sensor data */
     if (sensor_rx_buf[0] == '@') 
     {
-      HAL_UART_Transmit(&huart3, (uint8_t *)"RX: ", 4, 10);
-      HAL_UART_Transmit(&huart3, sensor_rx_buf, 64, 50);
-      HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
+      int status;
+      float s_act, s_avg, s_max, s_min;
+      float d_act, d_avg, d_max, d_min;
+      
+      // Parse response: @1:0 status spd_act spd_avg spd_max spd_min dir_act dir_avg dir_max dir_min
+      // Note: We skip the address part "@1:0"
+      if (sscanf((char*)&sensor_rx_buf[5], "%d %f %f %f %f %f %f %f %f", 
+                 &status, &s_act, &s_avg, &s_max, &s_min, &d_act, &d_avg, &d_max, &d_min) >= 6)
+      {
+        wind_speed = s_act;
+        wind_direction = d_act;
+        
+        // Debug output
+        char dbg_buf[128];
+        snprintf(dbg_buf, sizeof(dbg_buf), "Speed: %.1f m/s, Dir: %.1f deg\r\n", wind_speed, wind_direction);
+        HAL_UART_Transmit(&huart3, (uint8_t *)dbg_buf, strlen(dbg_buf), 100);
+      }
       
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
-      // HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+      HAL_UART_AbortReceive(&huart2);
+      HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
     }
     
     HAL_Delay(10);

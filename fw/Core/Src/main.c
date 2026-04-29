@@ -79,32 +79,18 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   else if (htim->Instance == TIM2)
   {
     // High priority: Sensor poll request (1Hz)
-    
-    // 1. Parse previous response if any
-    if (sensor_rx_buf[0] == '@') {
-        // Simple debug output of raw data
-        HAL_UART_Transmit(&huart3, (uint8_t *)"RX: ", 4, 10);
-        HAL_UART_Transmit(&huart3, sensor_rx_buf, 64, 50); // Send first 64 bytes for debug
-        HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
-        
-        // Clear buffer for next cycle
-        memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
-    }
-
-    // 2. Restart DMA reception just in case it was Normal mode and finished
-    HAL_UART_AbortReceive(&huart2);
-    HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
-
-    // 3. Switch UART2 to Transmit mode to send command
+    // Switch UART2 to Transmit mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // DE = 1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // nRE = 1
 
     uint8_t poll_cmd[] = "@1 MES\r\n";
-    HAL_UART_Transmit(&huart2, poll_cmd, 8, 50);
+    HAL_UART_Transmit(&huart2, poll_cmd, 8, 10); // Short timeout
 
-    // 4. Switch back to Receive mode
+    // Switch back to Receive mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // nRE = 0
+    
+    // Request DMA restart in main loop by flag or just check buffer there
   }
 }
 /* USER CODE END 0 */
@@ -167,6 +153,23 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* Check for sensor data */
+    if (sensor_rx_buf[0] == '@') 
+    {
+      // 1. Debug output
+      HAL_UART_Transmit(&huart3, (uint8_t *)"RX: ", 4, 10);
+      HAL_UART_Transmit(&huart3, sensor_rx_buf, 64, 50);
+      HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
+      
+      // 2. Clear buffer
+      memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
+      
+      // 3. Restart DMA reception (since it is in Normal mode)
+      HAL_UART_AbortReceive(&huart2);
+      HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+    }
+    
+    HAL_Delay(10);
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */

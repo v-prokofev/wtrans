@@ -58,8 +58,7 @@
 extern TIM_HandleTypeDef htim2;
 extern TIM_HandleTypeDef htim3;
 /* USER CODE BEGIN EV */
-extern TIM_HandleTypeDef htim2;
-extern TIM_HandleTypeDef htim3;
+
 /* USER CODE END EV */
 
 /******************************************************************************/
@@ -229,19 +228,5 @@ void TIM3_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
-/**
-  * @brief This function handles TIM2 global interrupt.
-  */
-void TIM2_IRQHandler(void)
-{
-  HAL_TIM_IRQHandler(&htim2);
-}
 
-/**
-  * @brief This function handles TIM3 global interrupt.
-  */
-void TIM3_IRQHandler(void)
-{
-  HAL_TIM_IRQHandler(&htim3);
-}
 /* USER CODE END 1 */

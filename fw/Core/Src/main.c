@@ -133,13 +133,13 @@ int main(void)
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);   // DE = 1
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET); // nRE = 0
 
-  /* Force UART2 to 9600 for Sensor (if CubeMX missed it) */
+  /* Force UART2 to 9600 for Sensor */
   huart2.Init.BaudRate = 9600;
   HAL_UART_Init(&huart2);
 
-  /* Start UART2 DMA Reception */
-  extern uint8_t sensor_rx_buf[128];
-  HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+  /* Start UART2 DMA Reception (Temporarily commented out to debug HF) */
+  // extern uint8_t sensor_rx_buf[128];
+  // HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
 
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
@@ -156,17 +156,12 @@ int main(void)
     /* Check for sensor data */
     if (sensor_rx_buf[0] == '@') 
     {
-      // 1. Debug output
       HAL_UART_Transmit(&huart3, (uint8_t *)"RX: ", 4, 10);
       HAL_UART_Transmit(&huart3, sensor_rx_buf, 64, 50);
       HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
       
-      // 2. Clear buffer
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
-      
-      // 3. Restart DMA reception (since it is in Normal mode)
-      HAL_UART_AbortReceive(&huart2);
-      HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+      // HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
     }
     
     HAL_Delay(10);

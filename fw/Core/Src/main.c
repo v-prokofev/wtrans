@@ -73,9 +73,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM3)
   {
-    // Low priority: LED blink (PB3) and debug dot
+    // Low priority: LED blink (PB3)
     HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
-    HAL_UART_Transmit(&huart3, (uint8_t *)".", 1, 10);
   }
   else if (htim->Instance == TIM2)
   {
@@ -85,9 +84,16 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // nRE = 1
 
     uint8_t poll_cmd[] = "@1 MES\r\n";
-    HAL_UART_Transmit(&huart2, poll_cmd, 8, 10); // Short timeout
+    HAL_UART_Transmit(&huart2, poll_cmd, 8, 50);
 
-    // Switch back to Receive mode
+    // Echo to debug port
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TX: ", 4, 10);
+    HAL_UART_Transmit(&huart3, poll_cmd, 8, 10);
+
+    // 4. Wait for TC (Transmission Complete)
+    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET);
+
+    // 5. Switch back to Receive mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // nRE = 0
     
@@ -154,27 +160,36 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* Check for sensor data */
-    if (sensor_rx_buf[0] == '@') 
+    /* Check if any data received via DMA */
+    uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
+    if (curr_pos > 0) 
     {
-      int status;
-      float s_act, s_avg, s_max, s_min;
-      float d_act, d_avg, d_max, d_min;
-      
-      // Parse response: @1:0 status spd_act spd_avg spd_max spd_min dir_act dir_avg dir_max dir_min
-      // Note: We skip the address part "@1:0"
-      if (sscanf((char*)&sensor_rx_buf[5], "%d %f %f %f %f %f %f %f %f", 
-                 &status, &s_act, &s_avg, &s_max, &s_min, &d_act, &d_avg, &d_max, &d_min) >= 6)
+      // 1. Echo EVERYTHING raw to debug port
+      HAL_UART_Transmit(&huart3, (uint8_t *)"RAW: ", 5, 10);
+      HAL_UART_Transmit(&huart3, sensor_rx_buf, curr_pos, 100);
+      HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
+
+      // 2. Try to find and parse a valid packet
+      char *ptr = strchr((char*)sensor_rx_buf, '@');
+      if (ptr != NULL) 
       {
-        wind_speed = s_act;
-        wind_direction = d_act;
+        int status;
+        float s_act, s_avg, s_max, s_min;
+        float d_act, d_avg, d_max, d_min;
         
-        // Debug output
-        char dbg_buf[128];
-        snprintf(dbg_buf, sizeof(dbg_buf), "Speed: %.1f m/s, Dir: %.1f deg\r\n", wind_speed, wind_direction);
-        HAL_UART_Transmit(&huart3, (uint8_t *)dbg_buf, strlen(dbg_buf), 100);
+        if (sscanf(ptr + 5, "%d %f %f %f %f %f %f %f %f", 
+                   &status, &s_act, &s_avg, &s_max, &s_min, &d_act, &d_avg, &d_max, &d_min) >= 6)
+        {
+          wind_speed = s_act;
+          wind_direction = d_act;
+          
+          char ms_buf[128];
+          snprintf(ms_buf, sizeof(ms_buf), "MS: Speed: %.1f m/s, Dir: %.1f deg\r\n", wind_speed, wind_direction);
+          HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
+        }
       }
       
+      // 3. Clear and restart DMA
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));

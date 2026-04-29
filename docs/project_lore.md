@@ -5,6 +5,9 @@
 2. **Persistence**: Any new implementation details or architectural shifts decided during the conversation must be recorded back into these files.
 3. **HAL usage**: The project now uses STM32 HAL (Hardware Abstraction Layer) for peripheral control.
 4. **Code Structure**: Hardware-specific register manipulations must be isolated from the high-level business logic.
+5. **USER CODE blocks**: All manual code MUST be written inside `/* USER CODE BEGIN ... */` and `/* USER CODE END ... */` blocks to persist through CubeMX regeneration.
+6. **Workflow**: Always update hardware configuration in `.ioc` (CubeMX) first, then implement logic in code.
+7. **Code Organization**: Prefer placing ISR callbacks and custom logic before the `main()` function (e.g., in `USER CODE BEGIN 0` or `USER CODE BEGIN PFP`).
 
 ## Key Decisions
 - **[2026-04-27] Error Signaling**: Use NAMUR NE43 standard for error signaling.

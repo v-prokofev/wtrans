@@ -44,6 +44,7 @@ TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+DMA_HandleTypeDef hdma_usart2_rx;
 
 /* USER CODE BEGIN PV */
 
@@ -54,14 +55,19 @@ void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_USART2_UART_Init(void);
-static void MX_USART3_UART_Init(void);
+static void MX_DMA_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+uint8_t sensor_rx_buf[128];
+float wind_speed = 0.0f;
+float wind_direction = 0.0f;
+
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM3)
@@ -73,18 +79,32 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   else if (htim->Instance == TIM2)
   {
     // High priority: Sensor poll request (1Hz)
-    // Switch UART2 to Transmit mode
+    
+    // 1. Parse previous response if any
+    if (sensor_rx_buf[0] == '@') {
+        // Simple debug output of raw data
+        HAL_UART_Transmit(&huart3, (uint8_t *)"RX: ", 4, 10);
+        HAL_UART_Transmit(&huart3, sensor_rx_buf, 64, 50); // Send first 64 bytes for debug
+        HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
+        
+        // Clear buffer for next cycle
+        memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
+    }
+
+    // 2. Restart DMA reception just in case it was Normal mode and finished
+    HAL_UART_AbortReceive(&huart2);
+    HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+
+    // 3. Switch UART2 to Transmit mode to send command
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // DE = 1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // nRE = 1
 
     uint8_t poll_cmd[] = "@1 MES\r\n";
     HAL_UART_Transmit(&huart2, poll_cmd, 8, 50);
 
-    // Switch back to Receive mode
+    // 4. Switch back to Receive mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // nRE = 0
-
-    // TODO: Start DMA or IT reception here
   }
 }
 /* USER CODE END 0 */
@@ -117,10 +137,11 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM2_Init();
   MX_USART2_UART_Init();
-  MX_USART3_UART_Init();
   MX_TIM3_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
   /* Enable UART3 (Debug) RS-485 Transmission */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);   // DE = 1
@@ -129,6 +150,10 @@ int main(void)
   /* Force UART2 to 9600 for Sensor (if CubeMX missed it) */
   huart2.Init.BaudRate = 9600;
   HAL_UART_Init(&huart2);
+
+  /* Start UART2 DMA Reception */
+  extern uint8_t sensor_rx_buf[128];
+  HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
 
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
@@ -341,6 +366,22 @@ static void MX_USART3_UART_Init(void)
   /* USER CODE BEGIN USART3_Init 2 */
 
   /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
+  * Enable DMA controller clock
+  */
+static void MX_DMA_Init(void)
+{
+
+  /* DMA controller clock enable */
+  __HAL_RCC_DMA1_CLK_ENABLE();
+
+  /* DMA interrupt init */
+  /* DMA1_Channel6_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Channel6_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Channel6_IRQn);
 
 }
 

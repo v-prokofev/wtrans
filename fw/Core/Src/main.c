@@ -62,7 +62,19 @@ static void MX_TIM3_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
+{
+  if (htim->Instance == TIM3)
+  {
+    // Low priority: LED blink (PB3) and debug dot
+    HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_3);
+    HAL_UART_Transmit(&huart3, (uint8_t *)".", 1, 10);
+  }
+  else if (htim->Instance == TIM2)
+  {
+    // High priority: Sensor update placeholder
+  }
+}
 /* USER CODE END 0 */
 
 /**
@@ -98,16 +110,6 @@ int main(void)
   MX_USART3_UART_Init();
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
-  /* Re-configure PA9 for LED if CubeMX missed it */
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
-  GPIO_InitStruct.Pin = GPIO_PIN_9;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
 
@@ -349,19 +351,7 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
-{
-  if (htim->Instance == TIM3)
-  {
-    // Low priority: LED blink and debug dot
-    HAL_GPIO_TogglePin(GPIOA, GPIO_PIN_9);
-    HAL_UART_Transmit(&huart3, (uint8_t *)".", 1, 10);
-  }
-  else if (htim->Instance == TIM2)
-  {
-    // High priority: Sensor update placeholder
-  }
-}
+
 
 /* USER CODE END 4 */
 

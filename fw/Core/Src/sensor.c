@@ -12,6 +12,11 @@ void Sensor_Init(Sensor_t *sensor, uint8_t id) {
 
 // Internal helper for RS-485 transmit
 static void Sensor_Send(UART_HandleTypeDef *huart, char *cmd) {
+    extern UART_HandleTypeDef huart3;
+    // Debug TX
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TX: ", 4, 10);
+    HAL_UART_Transmit(&huart3, (uint8_t *)cmd, strlen(cmd), 10);
+
     // Switch to TX
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // DE = 1
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // nRE = 1
@@ -28,6 +33,7 @@ static void Sensor_Send(UART_HandleTypeDef *huart, char *cmd) {
 }
 
 int Sensor_Parse(Sensor_t *sensor, char *buffer) {
+    extern UART_HandleTypeDef huart3;
     if (!buffer || strlen(buffer) < 5) return 0;
 
     char *parse_ptr = NULL;
@@ -38,7 +44,6 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
         parse_ptr = colon_ptr + 2; // Skip ":0 "
     } else {
         // Option B: Response without prefix (Command mode)
-        // Find the first digit in the buffer
         char *ptr = buffer;
         while (*ptr && !(*ptr >= '0' && *ptr <= '9')) {
             ptr++;
@@ -53,12 +58,17 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
         float s_act, s_avg, s_max, s_min, s_unused;
         float d_act, d_avg, d_max, d_min, d_unused;
         
-        // Try parsing 10 fields (standard DVU message)
-        if (sscanf(parse_ptr, "%d %f %f %f %f %f %f %f %f %f", 
-                   &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min) >= 7) {
+        int count = sscanf(parse_ptr, "%d %f %f %f %f %f %f %f %f %f", 
+                   &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min);
+        
+        if (count >= 7) {
             sensor->speed = s_act;
             sensor->direction = d_act;
             return 1;
+        } else if (count > 0) {
+            char dbg[64];
+            snprintf(dbg, sizeof(dbg), "DBG: sscanf only parsed %d fields\r\n", count);
+            HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 100);
         }
     }
 

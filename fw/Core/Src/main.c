@@ -164,21 +164,27 @@ int main(void)
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 
     {
-      // 1. Echo EVERYTHING raw to debug port
+      // 1. Wait a bit for the full message to arrive (RS-485 is slow)
+      HAL_Delay(50);
+      curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
+
+      // 2. Echo EVERYTHING raw to debug port
       HAL_UART_Transmit(&huart3, (uint8_t *)"RAW: ", 5, 10);
       HAL_UART_Transmit(&huart3, sensor_rx_buf, curr_pos, 100);
       HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
 
-      // 2. Try to find and parse a valid packet
-      char *ptr = strchr((char*)sensor_rx_buf, '@');
+      // 3. Try to find and parse a valid packet
+      // Look for the start of the data line (usually starts with @ or has :0)
+      char *ptr = strchr((char*)sensor_rx_buf, ':');
       if (ptr != NULL) 
       {
         int status;
-        float s_act, s_avg, s_max, s_min;
+        float s_act, s_avg, s_max, s_min, s_unused;
         float d_act, d_avg, d_max, d_min;
         
-        if (sscanf(ptr + 5, "%d %f %f %f %f %f %f %f %f", 
-                   &status, &s_act, &s_avg, &s_max, &s_min, &d_act, &d_avg, &d_max, &d_min) >= 6)
+        // Skip the ':0 ' part (usually 3 chars) and parse
+        if (sscanf(ptr + 2, "%d %f %f %f %f %f %f %f %f %f", 
+                   &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min) >= 7)
         {
           wind_speed = s_act;
           wind_direction = d_act;
@@ -189,7 +195,7 @@ int main(void)
         }
       }
       
-      // 3. Clear and restart DMA
+      // 4. Clear and restart DMA
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));

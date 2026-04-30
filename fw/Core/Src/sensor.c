@@ -36,9 +36,16 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
     char *colon_ptr = strchr(buffer, ':');
     if (colon_ptr != NULL) {
         parse_ptr = colon_ptr + 2; // Skip ":0 "
-    } else if (buffer[0] >= '0' && buffer[0] <= '9') {
-        // Option B: Response without prefix (Command mode / Session opened)
-        parse_ptr = buffer;
+    } else {
+        // Option B: Response without prefix (Command mode)
+        // Find the first digit in the buffer
+        char *ptr = buffer;
+        while (*ptr && !(*ptr >= '0' && *ptr <= '9')) {
+            ptr++;
+        }
+        if (*ptr) {
+            parse_ptr = ptr;
+        }
     }
 
     if (parse_ptr != NULL) {

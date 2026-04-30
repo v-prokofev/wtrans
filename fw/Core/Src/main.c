@@ -21,8 +21,9 @@
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-#include <string.h>
 #include <stdio.h>
+#include <string.h>
+#include "sensor.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -47,6 +48,9 @@ UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart2_rx;
 
+Sensor_t wind_sensor;
+uint8_t sensor_rx_buf[256];
+uint8_t poll_requested = 0;
 /* USER CODE BEGIN PV */
 
 /* USER CODE END PV */
@@ -65,9 +69,6 @@ static void MX_USART3_UART_Init(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-uint8_t sensor_rx_buf[128];
-float wind_speed = 0.0f;
-float wind_direction = 0.0f;
 
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
@@ -78,26 +79,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
   }
   else if (htim->Instance == TIM2)
   {
-    // High priority: Sensor poll request (1Hz)
-    // Switch UART2 to Transmit mode
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_SET);   // DE = 1
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_SET);   // nRE = 1
-
-    uint8_t poll_cmd[] = "@1 MES\r\n";
-    HAL_UART_Transmit(&huart2, poll_cmd, 8, 50);
-
-    // Echo to debug port
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TX: ", 4, 10);
-    HAL_UART_Transmit(&huart3, poll_cmd, 8, 10);
-
-    // 4. Wait for TC (Transmission Complete)
-    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET);
-
-    // 5. Switch back to Receive mode
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
-    HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0, GPIO_PIN_RESET); // nRE = 0
-    
-    // Request DMA restart in main loop by flag or just check buffer there
+    // Request a step in sensor logic
+    poll_requested = 1;
   }
 }
 /* USER CODE END 0 */
@@ -136,6 +119,8 @@ int main(void)
   MX_TIM3_Init();
   MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
+  Sensor_Init(&wind_sensor, 1); // Initialize sensor with ID 1
+
   /* Enable UART3 (Debug) RS-485 Transmission */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);   // DE = 1
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13, GPIO_PIN_RESET); // nRE = 0
@@ -145,7 +130,6 @@ int main(void)
   HAL_UART_Init(&huart2);
 
   /* Start UART2 DMA Reception */
-  extern uint8_t sensor_rx_buf[128];
   HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
 
   HAL_TIM_Base_Start_IT(&htim2);
@@ -160,42 +144,41 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* Check if any data received via DMA */
+    // 1. Handle outgoing requests (1Hz)
+    if (poll_requested)
+    {
+      poll_requested = 0;
+      Sensor_Step(&wind_sensor, &huart2);
+    }
+
+    // 2. Handle incoming data
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 
     {
-      // 1. Wait a bit for the full message to arrive (RS-485 is slow)
-      HAL_Delay(50);
+      HAL_Delay(300);
       curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
+      if (curr_pos >= sizeof(sensor_rx_buf)) curr_pos = sizeof(sensor_rx_buf) - 1;
+      sensor_rx_buf[curr_pos] = '\0';
 
-      // 2. Echo EVERYTHING raw to debug port
+      // Always show RAW for debugging
       HAL_UART_Transmit(&huart3, (uint8_t *)"RAW: ", 5, 10);
       HAL_UART_Transmit(&huart3, sensor_rx_buf, curr_pos, 100);
       HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
 
-      // 3. Try to find and parse a valid packet
-      // Look for the start of the data line (usually starts with @ or has :0)
-      char *ptr = strchr((char*)sensor_rx_buf, ':');
-      if (ptr != NULL) 
+      int res = Sensor_Parse(&wind_sensor, (char*)sensor_rx_buf);
+      if (res == 1) // Data parsed
       {
-        int status;
-        float s_act, s_avg, s_max, s_min, s_unused;
-        float d_act, d_avg, d_max, d_min;
-        
-        // Skip the ':0 ' part (usually 3 chars) and parse
-        if (sscanf(ptr + 2, "%d %f %f %f %f %f %f %f %f %f", 
-                   &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min) >= 7)
-        {
-          wind_speed = s_act;
-          wind_direction = d_act;
-          
-          char ms_buf[128];
-          snprintf(ms_buf, sizeof(ms_buf), "MS: Speed: %.1f m/s, Dir: %.1f deg\r\n", wind_speed, wind_direction);
-          HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
-        }
+        char ms_buf[128];
+        snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [READY]\r\n", 
+                 wind_sensor.speed, wind_sensor.direction);
+        HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
+      }
+      else if (res == 2) // Version received
+      {
+        HAL_UART_Transmit(&huart3, (uint8_t *)"MS: Sensor Verified! Switching to Poll mode.\r\n", 46, 100);
+        wind_sensor.state = SENSOR_READY_POLL;
       }
       
-      // 4. Clear and restart DMA
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));

@@ -30,13 +30,24 @@ static void Sensor_Send(UART_HandleTypeDef *huart, char *cmd) {
 int Sensor_Parse(Sensor_t *sensor, char *buffer) {
     if (!buffer || strlen(buffer) < 5) return 0;
 
-    // Option A: @id:0 line
-    char *ptr = strchr(buffer, ':');
-    if (ptr != NULL) {
+    char *parse_ptr = NULL;
+    
+    // Option A: Response with @id:0 prefix (Network mode)
+    char *colon_ptr = strchr(buffer, ':');
+    if (colon_ptr != NULL) {
+        parse_ptr = colon_ptr + 2; // Skip ":0 "
+    } else if (buffer[0] >= '0' && buffer[0] <= '9') {
+        // Option B: Response without prefix (Command mode / Session opened)
+        parse_ptr = buffer;
+    }
+
+    if (parse_ptr != NULL) {
         int status;
         float s_act, s_avg, s_max, s_min, s_unused;
-        float d_act, d_avg, d_max, d_min;
-        if (sscanf(ptr + 2, "%d %f %f %f %f %f %f %f %f %f", 
+        float d_act, d_avg, d_max, d_min, d_unused;
+        
+        // Try parsing 10 fields (standard DVU message)
+        if (sscanf(parse_ptr, "%d %f %f %f %f %f %f %f %f %f", 
                    &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min) >= 7) {
             sensor->speed = s_act;
             sensor->direction = d_act;
@@ -44,7 +55,7 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
         }
     }
 
-    // Option B: Spd= Dir= debug line
+    // Option C: Spd= Dir= debug line
     char *spd_ptr = strstr(buffer, "Spd=");
     char *dir_ptr = strstr(buffer, "Dir=");
     if (spd_ptr && dir_ptr) {
@@ -54,10 +65,10 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
         }
     }
 
-    // Option C: Version response check (for init)
+    // Option D: Version response check (for init)
     if (sensor->state == SENSOR_INIT_GET_VER) {
         if (strstr(buffer, "DVU") || strstr(buffer, "VER")) {
-            return 2; // Special code for version found
+            return 2; 
         }
     }
 

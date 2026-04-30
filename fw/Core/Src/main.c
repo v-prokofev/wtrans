@@ -40,9 +40,7 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- SPI_HandleTypeDef hspi1;
-
-TIM_HandleTypeDef htim2;
+ TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
 UART_HandleTypeDef huart2;
@@ -61,7 +59,6 @@ static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART3_UART_Init(void);
-static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -93,11 +90,9 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_UART_Transmit(&huart3, (uint8_t *)"TX: ", 4, 10);
     HAL_UART_Transmit(&huart3, poll_cmd, 8, 10);
 
-    // 4. Wait for TC (Transmission Complete) - replaced with safety timeout to prevent hang
+    // 4. Wait for TC (Transmission Complete) - safety timeout
     uint32_t tc_timeout = 1000;
-    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET && tc_timeout--) {
-        // Small wait
-    }
+    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET && tc_timeout--);
 
     // 5. Switch back to Receive mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
@@ -126,14 +121,8 @@ void DAC_Write(GPIO_TypeDef* CS_Port, uint16_t CS_Pin, uint8_t addr, uint16_t da
 
 void DAC_Init_All(void)
 {
-  // Initialize both DACs: Set Control register to default (0x0000 or specific config)
-  // And set initial current to 4mA (0x2AAA)
-  
-  // DAC1 - Speed
   DAC_Write(GPIOA, GPIO_PIN_4, DAC161_REG_CONTROL, 0x0000);
   DAC_Write(GPIOA, GPIO_PIN_4, DAC161_REG_DACCODE, 0x2AAA); 
-  
-  // DAC2 - Direction
   DAC_Write(GPIOB, GPIO_PIN_0, DAC161_REG_CONTROL, 0x0000);
   DAC_Write(GPIOB, GPIO_PIN_0, DAC161_REG_DACCODE, 0x2AAA);
 }
@@ -167,12 +156,11 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
   MX_TIM2_Init();
   MX_USART2_UART_Init();
-  MX_DMA_Init();
   MX_TIM3_Init();
   MX_USART3_UART_Init();
-  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   /* Enable UART3 (Debug) RS-485 Transmission */
   HAL_GPIO_WritePin(GPIOB, GPIO_PIN_14, GPIO_PIN_SET);   // DE = 1
@@ -189,7 +177,6 @@ int main(void)
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
 
-  /* Initialize DACs */
   DAC_Init_All();
 
   /* Send startup message */
@@ -201,21 +188,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* 0. Clear UART errors if any (prevents RX lock-up) */
-    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_ORE) != RESET || 
-        __HAL_UART_GET_FLAG(&huart2, UART_FLAG_FE) != RESET ||
-        __HAL_UART_GET_FLAG(&huart2, UART_FLAG_NE) != RESET) 
-    {
-        __HAL_UART_CLEAR_FLAG(&huart2, UART_FLAG_ORE | UART_FLAG_FE | UART_FLAG_NE);
-        HAL_UART_AbortReceive(&huart2);
-        HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
-    }
-
     /* Check if any data received via DMA */
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 
     {
-      // 1. RAW echo is now handled in the diagnostic block below once per second
+      // 1. Echo EVERYTHING raw to debug port
+      HAL_UART_Transmit(&huart3, (uint8_t *)"RAW: ", 5, 10);
+      HAL_UART_Transmit(&huart3, sensor_rx_buf, curr_pos, 100);
+      HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
 
       // 2. Try to find and parse a valid packet
       char *ptr = strchr((char*)sensor_rx_buf, '@');
@@ -231,14 +211,11 @@ int main(void)
           wind_speed = s_act;
           wind_direction = d_act;
           
-          // Convert to 4-20mA (16-bit code: 4mA = 10922, 20mA = 54613)
-          // Range 0..60 m/s for speed
           float s_norm = wind_speed / 60.0f;
           if (s_norm > 1.0f) s_norm = 1.0f;
           if (s_norm < 0.0f) s_norm = 0.0f;
           uint16_t dac_speed = 10922 + (uint16_t)(s_norm * (54613 - 10922));
           
-          // Range 0..360 deg for direction
           float d_norm = wind_direction / 360.0f;
           if (d_norm > 1.0f) d_norm = 1.0f;
           if (d_norm < 0.0f) d_norm = 0.0f;
@@ -261,23 +238,6 @@ int main(void)
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
-    }
-    
-    /* Diagnostic: Print DMA counter and RAW buffer periodically */
-    static uint32_t last_diag = 0;
-    if (HAL_GetTick() - last_diag > 1000) {
-        last_diag = HAL_GetTick();
-        uint16_t cndtr = __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
-        uint16_t received = sizeof(sensor_rx_buf) - cndtr;
-        
-        char diag_buf[64];
-        snprintf(diag_buf, sizeof(diag_buf), "DMA CNDTR: %u | RAW: ", cndtr);
-        HAL_UART_Transmit(&huart3, (uint8_t *)diag_buf, strlen(diag_buf), 10);
-        
-        if (received > 0) {
-            HAL_UART_Transmit(&huart3, sensor_rx_buf, received, 50);
-        }
-        HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
     }
     
     HAL_Delay(10);
@@ -325,44 +285,6 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
-}
-
-/**
-  * @brief SPI1 Initialization Function
-  * @param None
-  * @retval None
-  */
-static void MX_SPI1_Init(void)
-{
-
-  /* USER CODE BEGIN SPI1_Init 0 */
-
-  /* USER CODE END SPI1_Init 0 */
-
-  /* USER CODE BEGIN SPI1_Init 1 */
-
-  /* USER CODE END SPI1_Init 1 */
-  /* SPI1 parameter configuration*/
-  hspi1.Instance = SPI1;
-  hspi1.Init.Mode = SPI_MODE_MASTER;
-  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
-  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
-  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
-  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
-  hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64;
-  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
-  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
-  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
-  hspi1.Init.CRCPolynomial = 10;
-  if (HAL_SPI_Init(&hspi1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  /* USER CODE BEGIN SPI1_Init 2 */
-
-  /* USER CODE END SPI1_Init 2 */
-
 }
 
 /**
@@ -552,29 +474,23 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOB_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_4, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_0|GPIO_PIN_1, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_0|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_3, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(GPIOB, GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_3, GPIO_PIN_RESET);
 
-  /*Configure GPIO pins : PA0 PA1 PA4 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1|GPIO_PIN_4;
+  /*Configure GPIO pins : PA0 PA1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_1;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PB0 PB13 PB14 PB3 */
-  GPIO_InitStruct.Pin = GPIO_PIN_0|GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_3;
+  /*Configure GPIO pins : PB13 PB14 PB3 */
+  GPIO_InitStruct.Pin = GPIO_PIN_13|GPIO_PIN_14|GPIO_PIN_3;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-  /*Configure GPIO pins : PB1 PB2 */
-  GPIO_InitStruct.Pin = GPIO_PIN_1|GPIO_PIN_2;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
 }

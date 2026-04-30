@@ -1,6 +1,7 @@
 #include "sensor.h"
 #include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
 
 void Sensor_Init(Sensor_t *sensor, uint8_t id) {
     sensor->id = id;
@@ -41,11 +42,11 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
     // Option A: Response with @id:0 prefix (Network mode)
     char *colon_ptr = strchr(buffer, ':');
     if (colon_ptr != NULL) {
-        parse_ptr = colon_ptr + 2; // Skip ":0 "
+        parse_ptr = colon_ptr + 2; 
     } else {
         // Option B: Response without prefix (Command mode)
         char *ptr = buffer;
-        while (*ptr && !(*ptr >= '0' && *ptr <= '9')) {
+        while (*ptr && !(*ptr >= '0' && *ptr <= '9' || *ptr == '-')) {
             ptr++;
         }
         if (*ptr) {
@@ -54,21 +55,29 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
     }
 
     if (parse_ptr != NULL) {
-        int status;
-        float s_act, s_avg, s_max, s_min, s_unused;
-        float d_act, d_avg, d_max, d_min, d_unused;
+        char *endptr;
+        // 1. Status (int)
+        long status = strtol(parse_ptr, &endptr, 10);
+        if (endptr == parse_ptr) return 0;
         
-        int count = sscanf(parse_ptr, "%d %f %f %f %f %f %f %f %f %f", 
-                   &status, &s_act, &s_avg, &s_max, &s_min, &s_unused, &d_act, &d_avg, &d_max, &d_min);
+        // 2. spd_act
+        float s_act = strtof(endptr, &endptr);
+        // 3. spd_avg
+        float s_avg = strtof(endptr, &endptr);
+        // 4. spd_max
+        float s_max = strtof(endptr, &endptr);
+        // 5. spd_min
+        float s_min = strtof(endptr, &endptr);
+        // 6. spd_std
+        float s_std = strtof(endptr, &endptr);
+        // 7. dir_act
+        float d_act = strtof(endptr, &endptr);
         
-        if (count >= 7) {
+        // If we reached here and endptr moved, we at least have some data
+        if (endptr != parse_ptr) {
             sensor->speed = s_act;
             sensor->direction = d_act;
             return 1;
-        } else if (count > 0) {
-            char dbg[64];
-            snprintf(dbg, sizeof(dbg), "DBG: sscanf only parsed %d fields\r\n", count);
-            HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 100);
         }
     }
 

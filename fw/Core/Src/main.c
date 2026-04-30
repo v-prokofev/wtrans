@@ -93,8 +93,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     HAL_UART_Transmit(&huart3, (uint8_t *)"TX: ", 4, 10);
     HAL_UART_Transmit(&huart3, poll_cmd, 8, 10);
 
-    // 4. Wait for TC (Transmission Complete)
-    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET);
+    // 4. Wait for TC (Transmission Complete) - replaced with safety timeout to prevent hang
+    uint32_t tc_timeout = 1000;
+    while(__HAL_UART_GET_FLAG(&huart2, UART_FLAG_TC) == RESET && tc_timeout--) {
+        // Small wait
+    }
 
     // 5. Switch back to Receive mode
     HAL_GPIO_WritePin(GPIOA, GPIO_PIN_1, GPIO_PIN_RESET); // DE = 0
@@ -198,6 +201,16 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* 0. Clear UART errors if any (prevents RX lock-up) */
+    if (__HAL_UART_GET_FLAG(&huart2, UART_FLAG_ORE) != RESET || 
+        __HAL_UART_GET_FLAG(&huart2, UART_FLAG_FE) != RESET ||
+        __HAL_UART_GET_FLAG(&huart2, UART_FLAG_NE) != RESET) 
+    {
+        __HAL_UART_CLEAR_FLAG(&huart2, UART_FLAG_ORE | UART_FLAG_FE | UART_FLAG_NE);
+        HAL_UART_AbortReceive(&huart2);
+        HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+    }
+
     /* Check if any data received via DMA */
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 

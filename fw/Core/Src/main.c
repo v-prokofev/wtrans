@@ -202,12 +202,7 @@ int main(void)
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 
     {
-      // 1. Echo EVERYTHING raw to debug port (Temporarily disabled)
-      /*
-      HAL_UART_Transmit(&huart3, (uint8_t *)"RAW: ", 5, 10);
-      HAL_UART_Transmit(&huart3, sensor_rx_buf, curr_pos, 100);
-      HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
-      */
+      // 1. RAW echo is now handled in the diagnostic block below once per second
 
       // 2. Try to find and parse a valid packet
       char *ptr = strchr((char*)sensor_rx_buf, '@');
@@ -253,6 +248,23 @@ int main(void)
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+    }
+    
+    /* Diagnostic: Print DMA counter and RAW buffer periodically */
+    static uint32_t last_diag = 0;
+    if (HAL_GetTick() - last_diag > 1000) {
+        last_diag = HAL_GetTick();
+        uint16_t cndtr = __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
+        uint16_t received = sizeof(sensor_rx_buf) - cndtr;
+        
+        char diag_buf[64];
+        snprintf(diag_buf, sizeof(diag_buf), "DMA CNDTR: %u | RAW: ", cndtr);
+        HAL_UART_Transmit(&huart3, (uint8_t *)diag_buf, strlen(diag_buf), 10);
+        
+        if (received > 0) {
+            HAL_UART_Transmit(&huart3, sensor_rx_buf, received, 50);
+        }
+        HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
     }
     
     HAL_Delay(10);

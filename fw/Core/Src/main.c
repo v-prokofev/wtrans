@@ -24,6 +24,7 @@
 #include <stdio.h>
 #include <string.h>
 #include "sensor.h"
+#include "dac.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -43,6 +44,7 @@
 /* Private variables ---------------------------------------------------------*/
  TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
+SPI_HandleTypeDef hspi1;
 
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
@@ -52,7 +54,7 @@ Sensor_t wind_sensor;
 uint8_t sensor_rx_buf[256];
 uint8_t poll_requested = 0;
 /* USER CODE BEGIN PV */
-
+uint32_t last_valid_data_tick = 0;  /* For 2-second sensor timeout */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -63,6 +65,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_DMA_Init(void);
 static void MX_TIM3_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -114,6 +117,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_DMA_Init();
+  MX_SPI1_Init();
   MX_TIM2_Init();
   MX_USART2_UART_Init();
   MX_TIM3_Init();
@@ -131,6 +135,11 @@ int main(void)
 
   /* Start UART2 DMA Reception */
   HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+
+  /* Initialize DAC outputs — both channels start at 3.5 mA (error level) */
+  DAC_Init(&hspi1);
+
+  last_valid_data_tick = HAL_GetTick();
 
   HAL_TIM_Base_Start_IT(&htim2);
   HAL_TIM_Base_Start_IT(&htim3);
@@ -166,24 +175,44 @@ int main(void)
       HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
 
       int res = Sensor_Parse(&wind_sensor, (char*)sensor_rx_buf);
-      if (res == 1) // Data parsed
+      if (res == 1) // Data parsed successfully
       {
+        /* Update DAC outputs */
+        DAC_UpdateOutputs(wind_sensor.speed, wind_sensor.direction);
+        last_valid_data_tick = HAL_GetTick();
+
+        /* Check DAC hardware errors */
+        uint8_t dac_err = DAC_ReadErrors();
         char ms_buf[128];
-        snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [READY]\r\n", 
-                 wind_sensor.speed, wind_sensor.direction);
+        if (dac_err == 0)
+        {
+          snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [READY]\r\n",
+                   wind_sensor.speed, wind_sensor.direction);
+        }
+        else
+        {
+          snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [DAC ERR 0x%02X]\r\n",
+                   wind_sensor.speed, wind_sensor.direction, dac_err);
+        }
         HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
       }
-      else if (res == 2) // Version received
+      else if (res == 2) // Version received during init
       {
         HAL_UART_Transmit(&huart3, (uint8_t *)"MS: Sensor Verified! Switching to Poll mode.\r\n", 46, 100);
         wind_sensor.state = SENSOR_READY_POLL;
       }
-      
+
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
       HAL_UART_AbortReceive(&huart2);
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
     }
-    
+
+    /* Sensor timeout check: 2000 ms without valid data -> NAMUR NE43 error */
+    if (HAL_GetTick() - last_valid_data_tick > 2000)
+    {
+      DAC_SetError();
+    }
+
     HAL_Delay(10);
     /* USER CODE END WHILE */
 
@@ -441,6 +470,30 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+/**
+  * @brief SPI1 Initialization Function (PA5=SCK, PA6=MISO, PA7=MOSI)
+  *        Mode 1: CPOL=0, CPHA=1 as required by DAC161S997
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+  hspi1.Instance               = SPI1;
+  hspi1.Init.Mode              = SPI_MODE_MASTER;
+  hspi1.Init.Direction         = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize          = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity       = SPI_POLARITY_LOW;   /* CPOL=0 */
+  hspi1.Init.CLKPhase          = SPI_PHASE_2EDGE;    /* CPHA=1 */
+  hspi1.Init.NSS               = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64; /* 72MHz/64 = 1.125 MHz */
+  hspi1.Init.FirstBit          = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode            = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation    = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial     = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
 
 /* USER CODE END 4 */
 

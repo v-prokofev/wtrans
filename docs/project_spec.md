@@ -14,13 +14,13 @@
 - **PB11**: RX
 - **PB13**: nRE
 - **PB14**: DE
-- **PA4**: DAC1_nCS (Chip Select for Speed DAC)
+- **PA4**: DAC2_nCS (Chip Select for Direction DAC) [pin 14]
 - **PA5**: SCK (Serial Clock)
 - **PA6**: MISO (Master In Slave Out - for status)
 - **PA7**: MOSI (Master Out Slave In)
-- **PB0**: DAC2_nCS (Chip Select for Direction DAC)
-- **PB1**: DAC1_nERR (Error feedback from DAC1)
-- **PB2**: DAC2_nERR (Error feedback from DAC2)
+- **PB0**: DAC1_nCS (Chip Select for Speed DAC) [pin 18]
+- **PB1**: DAC2_nERR (Error feedback from DAC2) [pin 19]
+- **PB2**: DAC1_nERR (Error feedback from DAC1) [pin 20]
 
 ### 1.3 Indicators & Other
 - **PA9**: System LED (Heartbeat)

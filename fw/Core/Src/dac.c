@@ -85,8 +85,8 @@ static void DAC_ConfigChannel(uint8_t channel)
     /* WR_MODE: normal write mode (0x0000 = direct write, no loopback) */
     DAC_WriteReg(channel, DAC161S997_REG_WR_MODE, 0x0000);
 
-    /* ERR_CONFIG: enable low/high error outputs on nERR pin */
-    DAC_WriteReg(channel, DAC161S997_REG_ERR_CONFIG, 0x0001);
+    /* ERR_CONFIG: Mask SPI timeout (bit 4), enable loop error to nERR (bit 1) */
+    DAC_WriteReg(channel, DAC161S997_REG_ERR_CONFIG, 0x0012);
 
     /* Preset to error level until real data arrives */
     DAC_WriteReg(channel, DAC161S997_REG_DACCODE, mA_to_code(DAC_CURRENT_ERROR_MA));

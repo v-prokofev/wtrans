@@ -82,4 +82,10 @@ uint16_t DAC_ReadStatus(uint8_t channel);
  */
 void DAC_Refresh(void);
 
+/**
+ * @brief  SPI connectivity probe: write a known pattern, read back the echo.
+ *         Returns probe_code if SPI OK, 0xFFFF if MISO floating HIGH, 0x0000 if floating LOW.
+ */
+uint16_t DAC_SpiProbe(uint8_t channel, uint16_t probe_code);
+
 #endif /* __DAC_H */

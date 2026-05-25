@@ -102,8 +102,16 @@ static void DAC_ConfigChannel(uint8_t channel)
     /* WR_MODE: normal write mode (0x0000 = direct write, no loopback) */
     DAC_WriteReg(channel, DAC161S997_REG_WR_MODE, 0x0000);
 
-    /* ERR_CONFIG: Mask SPI timeout (bit 4), enable loop error to nERR (bit 1) */
-    DAC_WriteReg(channel, DAC161S997_REG_ERR_CONFIG, 0x0012);
+    /*
+     * ERR_CONFIG: mask ALL error sources for now so nERR stays quiet.
+     * DAC161S997 ERR_CONFIG bits (from datasheet table 15):
+     *   bit 0  MASK_LOOP_ERR  — mask loop current error → nERR
+     *   bit 1  MASK_SPI_TOUT  — mask SPI timeout        → nERR
+     *   bit 2  MASK_SPI_ERR   — mask SPI frame error    → nERR
+     * Setting all bits = 0x0007 suppresses all nERR toggling.
+     * Un-mask selectively once SPI readback is confirmed working.
+     */
+    DAC_WriteReg(channel, DAC161S997_REG_ERR_CONFIG, 0x0007);
 
     /* Preset to error level until real data arrives */
     DAC_WriteReg(channel, DAC161S997_REG_DACCODE, mA_to_code(DAC_CURRENT_ERROR_MA));
@@ -125,6 +133,11 @@ void DAC_Init(SPI_HandleTypeDef *hspi)
 
     DAC_ConfigChannel(DAC_CHANNEL_SPEED);
     DAC_ConfigChannel(DAC_CHANNEL_DIRECTION);
+
+    /* Seed keepalive cache so DAC_Refresh() fires immediately from t=0,
+     * preventing SPI timeout before the first sensor reading arrives. */
+    _last_code[DAC_CHANNEL_SPEED]     = mA_to_code(DAC_CURRENT_ERROR_MA);
+    _last_code[DAC_CHANNEL_DIRECTION] = mA_to_code(DAC_CURRENT_ERROR_MA);
 }
 
 void DAC_WriteCode(uint8_t channel, uint16_t code)
@@ -173,12 +186,38 @@ uint16_t DAC_ReadStatus(uint8_t channel)
 {
     uint8_t rx[3] = {0};
 
-    /* First transaction: request STATUS register (sets internal pointer) */
-    DAC_TransceiveReg(channel, DAC161S997_REG_STATUS, 0x0000, rx);
-    HAL_Delay(1);
-    /* Second transaction: NOOP — clocks out the STATUS value on MISO */
-    DAC_TransceiveReg(channel, 0x00, 0x0000, rx);
+    /*
+     * DAC161S997 echo protocol:
+     *   Frame N:   send [ADDR][DATA]  → MISO echoes frame N-1's register
+     *   Frame N+1: send [NOOP][0000]  → MISO echoes frame N's register
+     *
+     * So to read STATUS:
+     *   1. Write to STATUS address — triggers chip to latch STATUS for next echo
+     *   2. Send NOOP — MISO outputs STATUS contents
+     *   Both frames have CS toggled between them (required by DAC161S997).
+     */
+    DAC_TransceiveReg(channel, DAC161S997_REG_STATUS, 0x0000, NULL); /* prime echo */
+    DAC_TransceiveReg(channel, 0x00, 0x0000, rx);                    /* read echo  */
 
+    return (uint16_t)((rx[1] << 8) | rx[2]);
+}
+
+/**
+ * @brief  SPI connectivity probe: write a known code to DACCODE, then echo-read it.
+ *         If MISO is floating HIGH → returns 0xFFFF.
+ *         If MISO is floating LOW  → returns 0x0000.
+ *         If SPI is working        → returns the code we just wrote.
+ * @param  channel  DAC_CHANNEL_SPEED or DAC_CHANNEL_DIRECTION
+ * @param  probe_code  value to write (suggest 0xA5A5 for easy bit-pattern check)
+ * @retval echo of the probe write (should equal probe_code if SPI OK)
+ */
+uint16_t DAC_SpiProbe(uint8_t channel, uint16_t probe_code)
+{
+    uint8_t rx[3] = {0};
+    /* Write probe_code to DACCODE — this will be echoed next transaction */
+    DAC_TransceiveReg(channel, DAC161S997_REG_DACCODE, probe_code, NULL);
+    /* NOOP — MISO echoes the DACCODE write above */
+    DAC_TransceiveReg(channel, 0x00, 0x0000, rx);
     return (uint16_t)((rx[1] << 8) | rx[2]);
 }
 

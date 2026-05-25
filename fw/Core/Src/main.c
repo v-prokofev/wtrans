@@ -148,15 +148,28 @@ int main(void)
   char *msg = "\r\n--- WindTrans System Started ---\r\n";
   HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
 
-  /* ---- SPI self-check: read STATUS from both DAC channels ---- */
+  /* ---- SPI self-check ---- */
   {
-    char dbg[128];
+    char dbg[200];
+
+    /* 1. Echo/loopback probe: write 0xA55A, read back echo next frame.
+     *    If MISO floats HIGH  -> 0xFFFF  (broken MISO path)
+     *    If MISO floats LOW   -> 0x0000  (MISO stuck low)
+     *    If SPI OK            -> 0xA55A  (echo matches) */
+    uint16_t p1 = DAC_SpiProbe(DAC_CHANNEL_SPEED,     0xA55A);
+    uint16_t p2 = DAC_SpiProbe(DAC_CHANNEL_DIRECTION, 0xA55A);
+
+    /* 2. STATUS register read (valid only if probe returned 0xA55A) */
     uint16_t st1 = DAC_ReadStatus(DAC_CHANNEL_SPEED);
     uint16_t st2 = DAC_ReadStatus(DAC_CHANNEL_DIRECTION);
+
     snprintf(dbg, sizeof(dbg),
-             "INIT: DAC1_ST=0x%04X DAC2_ST=0x%04X nERR=0x%02X\r\n"
-             "  (0xFFFF = SPI not reaching chip; 0x0000 = OK)\r\n",
-             st1, st2, DAC_ReadErrors());
+             "INIT: nERR=0x%02X\r\n"
+             "  DAC1: probe=0x%04X %s  status=0x%04X\r\n"
+             "  DAC2: probe=0x%04X %s  status=0x%04X\r\n",
+             DAC_ReadErrors(),
+             p1, (p1 == 0xA55A) ? "[SPI OK ]" : (p1 == 0xFFFF) ? "[MISO HI]" : "[SPI ERR]", st1,
+             p2, (p2 == 0xA55A) ? "[SPI OK ]" : (p2 == 0xFFFF) ? "[MISO HI]" : "[SPI ERR]", st2);
     HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 200);
   }
   /* USER CODE END 2 */
@@ -201,11 +214,14 @@ int main(void)
         uint8_t dac_err = DAC_ReadErrors();
 
         char ms_buf[192];
+        /* Use STATUS register as source of truth (nERR pin PB1 appears hardware-grounded).
+         * STATUS bits: bit3=LOOP_ERR, bit4=SPI_TOUT, bit5=SPI_ERR */
+        uint8_t spi_fault = (st1 != 0x0000) || (st2 != 0x0000);
         snprintf(ms_buf, sizeof(ms_buf),
-                 "MS: Spd=%.1f, Dir=%.1f | nERR=0x%02X | ST1=0x%04X ST2=0x%04X%s\r\n",
+                 "MS: Spd=%.1f, Dir=%.1f | ST1=0x%04X ST2=0x%04X nERR=0x%02X%s\r\n",
                  wind_sensor.speed, wind_sensor.direction,
-                 dac_err, st1, st2,
-                 (dac_err == 0) ? " [READY]" : " [DAC ERR]");
+                 st1, st2, dac_err,
+                 spi_fault ? " [DAC FAULT]" : " [OK]");
         HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
       }
       else if (res == 2) // Version received during init

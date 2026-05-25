@@ -174,42 +174,56 @@ int main(void)
   }
 
   /* ---- DAC channel self-test ----
-   * Sweeps each channel 4mA→20mA while holding the other at error level.
-   * Watch the ammeter: the channel connected to the loop will visibly change.
-   * Output on UART3 tells you which step is running. */
+   * Sweeps each channel 4mA→20mA.
+   * Watch the ammeter: the channel with the loop will visibly change current.
+   * Console shows countdown so you know which step is active. */
   {
-    const uint32_t STEP_MS = 5000;
-
-    /* Helper macro: wait N ms while keeping DAC alive */
-    #define DAC_WAIT(ms) do { \
+    /* Wait-with-keepalive and second-by-second countdown on UART3 */
+    #define DAC_WAIT_COUNTED(ms, label) do { \
       uint32_t _t0 = HAL_GetTick(); \
-      while (HAL_GetTick() - _t0 < (ms)) { DAC_Refresh(); HAL_Delay(50); } \
+      uint32_t _printed = 0; \
+      char _cb[32]; \
+      while (HAL_GetTick() - _t0 < (ms)) { \
+        uint32_t _elapsed = (HAL_GetTick() - _t0) / 1000; \
+        if (_elapsed != _printed) { \
+          _printed = _elapsed; \
+          snprintf(_cb, sizeof(_cb), "  %s: %lus\r\n", label, _elapsed + 1); \
+          HAL_UART_Transmit(&huart3, (uint8_t *)_cb, strlen(_cb), 50); \
+        } \
+        DAC_Refresh(); HAL_Delay(50); \
+      } \
     } while(0)
 
-    /* --- Channel 1 (Speed, PB0 nCS) --- */
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 (Speed) = 4mA ...\r\n", 30, 100);
+    /* --- DAC1: Speed channel (CS = PB0) --- */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 (Speed/PB0): 4mA\r\n", 28, 100);
     DAC_SetCurrent(DAC_CHANNEL_SPEED, 4.0f);
-    DAC_WAIT(STEP_MS);
+    DAC_WAIT_COUNTED(5000, "DAC1=4mA");
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 (Speed) = 20mA ...\r\n", 31, 100);
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 (Speed/PB0): 20mA\r\n", 29, 100);
     DAC_SetCurrent(DAC_CHANNEL_SPEED, 20.0f);
-    DAC_WAIT(STEP_MS);
+    DAC_WAIT_COUNTED(5000, "DAC1=20mA");
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 done.\r\n", 18, 100);
-    DAC_SetError(); /* reset both to 3.5mA between tests */
-    DAC_WAIT(1000);
-
-    /* --- Channel 2 (Direction, PA4 nCS) --- */
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 (Dir) = 4mA ...\r\n", 28, 100);
-    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 4.0f);
-    DAC_WAIT(STEP_MS);
-
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 (Dir) = 20mA ...\r\n", 29, 100);
-    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 20.0f);
-    DAC_WAIT(STEP_MS);
-
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 done. Starting normal operation.\r\n", 44, 100);
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 done.\r\n", 16, 100);
     DAC_SetError();
+    DAC_WAIT_COUNTED(1000, "pause");
+
+    /* --- DAC2: Direction channel (CS = PA4) --- */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 (Dir/PA4): 4mA\r\n", 26, 100);
+    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 4.0f);
+    DAC_WAIT_COUNTED(5000, "DAC2=4mA");
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 (Dir/PA4): 20mA\r\n", 27, 100);
+    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 20.0f);
+    DAC_WAIT_COUNTED(5000, "DAC2=20mA");
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 done. Starting normal op.\r\n", 36, 100);
+
+    /* Flush DMA buffer: sensor was sending during the test, discard stale data */
+    DAC_SetError();
+    memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
+    HAL_UART_AbortReceive(&huart2);
+    HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
+    last_valid_data_tick = HAL_GetTick();
   }
   /* USER CODE END 2 */
 

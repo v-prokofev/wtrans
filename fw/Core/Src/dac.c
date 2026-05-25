@@ -27,6 +27,9 @@
  * ------------------------------------------------------------------------- */
 static SPI_HandleTypeDef *_hspi = NULL;
 
+/* Last written codes — used for SPI keepalive refresh */
+static uint16_t _last_code[3] = {0};  /* index 1=SPEED, 2=DIRECTION */
+
 /* -------------------------------------------------------------------------
  * Private helpers
  * ------------------------------------------------------------------------- */
@@ -50,19 +53,33 @@ static inline void cs_deselect(uint8_t channel)
 }
 
 /**
- * @brief  Write a 3-byte SPI frame to the DAC161S997.
+ * @brief  Write a 3-byte SPI frame to the DAC161S997 and capture MISO.
  *         Frame layout: [7:0]=addr, [15:8]=data_high, [23:16]=data_low
+ *         On return, rx[1..2] contain the previous register value echoed by the DAC.
  */
-static void DAC_WriteReg(uint8_t channel, uint8_t addr, uint16_t data)
+static void DAC_TransceiveReg(uint8_t channel, uint8_t addr, uint16_t data, uint8_t *rx_out)
 {
-    uint8_t frame[3];
-    frame[0] = addr;
-    frame[1] = (uint8_t)(data >> 8);
-    frame[2] = (uint8_t)(data & 0xFF);
+    uint8_t tx[3];
+    uint8_t rx[3] = {0};
+    tx[0] = addr;
+    tx[1] = (uint8_t)(data >> 8);
+    tx[2] = (uint8_t)(data & 0xFF);
 
     cs_select(channel);
-    HAL_SPI_Transmit(_hspi, frame, 3, 10);
+    HAL_SPI_TransmitReceive(_hspi, tx, rx, 3, 10);
     cs_deselect(channel);
+
+    if (rx_out) {
+        rx_out[0] = rx[0];
+        rx_out[1] = rx[1];
+        rx_out[2] = rx[2];
+    }
+}
+
+/** Write without caring about MISO. */
+static void DAC_WriteReg(uint8_t channel, uint8_t addr, uint16_t data)
+{
+    DAC_TransceiveReg(channel, addr, data, NULL);
 }
 
 /** Convert mA to a 16-bit DAC code. Input is clamped to [0, 24] mA. */
@@ -113,6 +130,7 @@ void DAC_Init(SPI_HandleTypeDef *hspi)
 void DAC_WriteCode(uint8_t channel, uint16_t code)
 {
     if (_hspi == NULL) return;
+    _last_code[channel] = code;           /* Cache for refresh */
     DAC_WriteReg(channel, DAC161S997_REG_DACCODE, code);
 }
 
@@ -149,4 +167,26 @@ uint8_t DAC_ReadErrors(void)
     if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_2) == GPIO_PIN_RESET) err |= 0x01; /* DAC1: PB2 = pin 20 = DAC1_nERR */
     if (HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_1) == GPIO_PIN_RESET) err |= 0x02; /* DAC2: PB1 = pin 19 = DAC2_nERR */
     return err;
+}
+
+uint16_t DAC_ReadStatus(uint8_t channel)
+{
+    uint8_t rx[3] = {0};
+
+    /* First transaction: request STATUS register (sets internal pointer) */
+    DAC_TransceiveReg(channel, DAC161S997_REG_STATUS, 0x0000, rx);
+    HAL_Delay(1);
+    /* Second transaction: NOOP — clocks out the STATUS value on MISO */
+    DAC_TransceiveReg(channel, 0x00, 0x0000, rx);
+
+    return (uint16_t)((rx[1] << 8) | rx[2]);
+}
+
+void DAC_Refresh(void)
+{
+    /* Re-send the last written DAC codes to keep SPI watchdog alive */
+    if (_last_code[DAC_CHANNEL_SPEED] > 0)
+        DAC_WriteReg(DAC_CHANNEL_SPEED,     DAC161S997_REG_DACCODE, _last_code[DAC_CHANNEL_SPEED]);
+    if (_last_code[DAC_CHANNEL_DIRECTION] > 0)
+        DAC_WriteReg(DAC_CHANNEL_DIRECTION, DAC161S997_REG_DACCODE, _last_code[DAC_CHANNEL_DIRECTION]);
 }

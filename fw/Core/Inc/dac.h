@@ -4,12 +4,20 @@
 #include "stm32f1xx_hal.h"
 
 /* DAC161S997 Register addresses */
-#define DAC161S997_REG_WR_MODE   0x01
-#define DAC161S997_REG_DACCODE   0x04
+#define DAC161S997_REG_WR_MODE    0x01
+#define DAC161S997_REG_DACCODE    0x04
 #define DAC161S997_REG_ERR_CONFIG 0x05
-#define DAC161S997_REG_ERR_LOW   0x06
-#define DAC161S997_REG_ERR_HIGH  0x07
-#define DAC161S997_REG_RESET     0x09
+#define DAC161S997_REG_ERR_LOW    0x06
+#define DAC161S997_REG_ERR_HIGH   0x07
+#define DAC161S997_REG_STATUS     0x08  /* Read-only: chip status flags */
+#define DAC161S997_REG_RESET      0x09
+
+/* STATUS register bit masks (read-only) */
+#define DAC_STATUS_LOOP_ERR  (1 << 3)  /* Loop open / overload */
+#define DAC_STATUS_SPI_TOUT  (1 << 4)  /* SPI timeout */
+#define DAC_STATUS_SPI_ERR   (1 << 5)  /* SPI frame error */
+#define DAC_STATUS_FERR      (1 << 6)  /* Frame error */
+#define DAC_STATUS_CERR      (1 << 7)  /* Checksum error */
 
 /* Current range constants (mA) */
 #define DAC_CURRENT_MIN_MA       4.0f
@@ -59,5 +67,19 @@ void DAC_SetError(void);
  * @retval 0 = no error, non-zero = HW fault detected (bit0=DAC1, bit1=DAC2)
  */
 uint8_t DAC_ReadErrors(void);
+
+/**
+ * @brief  Read the STATUS register from a DAC channel via SPI.
+ *         Sends a NOOP (all-zeros) to clock out the status word.
+ * @param  channel  DAC_CHANNEL_SPEED or DAC_CHANNEL_DIRECTION
+ * @retval 16-bit STATUS register value (see DAC_STATUS_* masks)
+ */
+uint16_t DAC_ReadStatus(uint8_t channel);
+
+/**
+ * @brief  Periodic keepalive — re-write last DAC codes to prevent SPI timeout.
+ *         Call from main loop every ~50 ms.
+ */
+void DAC_Refresh(void);
 
 #endif /* __DAC_H */

@@ -181,19 +181,19 @@ int main(void)
         DAC_UpdateOutputs(wind_sensor.speed, wind_sensor.direction);
         last_valid_data_tick = HAL_GetTick();
 
-        /* Check DAC hardware errors */
+        /* Read DAC STATUS registers via SPI */
+        uint16_t st1 = DAC_ReadStatus(DAC_CHANNEL_SPEED);
+        uint16_t st2 = DAC_ReadStatus(DAC_CHANNEL_DIRECTION);
+
+        /* Read nERR hardware pins */
         uint8_t dac_err = DAC_ReadErrors();
-        char ms_buf[128];
-        if (dac_err == 0)
-        {
-          snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [READY]\r\n",
-                   wind_sensor.speed, wind_sensor.direction);
-        }
-        else
-        {
-          snprintf(ms_buf, sizeof(ms_buf), "MS: Spd=%.1f, Dir=%.1f [DAC ERR 0x%02X]\r\n",
-                   wind_sensor.speed, wind_sensor.direction, dac_err);
-        }
+
+        char ms_buf[192];
+        snprintf(ms_buf, sizeof(ms_buf),
+                 "MS: Spd=%.1f, Dir=%.1f | nERR=0x%02X | ST1=0x%04X ST2=0x%04X%s\r\n",
+                 wind_sensor.speed, wind_sensor.direction,
+                 dac_err, st1, st2,
+                 (dac_err == 0) ? " [READY]" : " [DAC ERR]");
         HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
       }
       else if (res == 2) // Version received during init
@@ -211,6 +211,14 @@ int main(void)
     if (HAL_GetTick() - last_valid_data_tick > 2000)
     {
       DAC_SetError();
+    }
+
+    /* DAC keepalive: refresh every 50 ms to prevent SPI timeout watchdog */
+    static uint32_t dac_refresh_tick = 0;
+    if (HAL_GetTick() - dac_refresh_tick >= 50)
+    {
+      dac_refresh_tick = HAL_GetTick();
+      DAC_Refresh();
     }
 
     HAL_Delay(10);

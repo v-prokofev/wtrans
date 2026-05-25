@@ -172,6 +172,45 @@ int main(void)
              p2, (p2 == 0xA55A) ? "[SPI OK ]" : (p2 == 0xFFFF) ? "[MISO HI]" : "[SPI ERR]", st2);
     HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 200);
   }
+
+  /* ---- DAC channel self-test ----
+   * Sweeps each channel 4mA→20mA while holding the other at error level.
+   * Watch the ammeter: the channel connected to the loop will visibly change.
+   * Output on UART3 tells you which step is running. */
+  {
+    const uint32_t STEP_MS = 5000;
+
+    /* Helper macro: wait N ms while keeping DAC alive */
+    #define DAC_WAIT(ms) do { \
+      uint32_t _t0 = HAL_GetTick(); \
+      while (HAL_GetTick() - _t0 < (ms)) { DAC_Refresh(); HAL_Delay(50); } \
+    } while(0)
+
+    /* --- Channel 1 (Speed, PB0 nCS) --- */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 (Speed) = 4mA ...\r\n", 30, 100);
+    DAC_SetCurrent(DAC_CHANNEL_SPEED, 4.0f);
+    DAC_WAIT(STEP_MS);
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 (Speed) = 20mA ...\r\n", 31, 100);
+    DAC_SetCurrent(DAC_CHANNEL_SPEED, 20.0f);
+    DAC_WAIT(STEP_MS);
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC1 done.\r\n", 18, 100);
+    DAC_SetError(); /* reset both to 3.5mA between tests */
+    DAC_WAIT(1000);
+
+    /* --- Channel 2 (Direction, PA4 nCS) --- */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 (Dir) = 4mA ...\r\n", 28, 100);
+    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 4.0f);
+    DAC_WAIT(STEP_MS);
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 (Dir) = 20mA ...\r\n", 29, 100);
+    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 20.0f);
+    DAC_WAIT(STEP_MS);
+
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST: DAC2 done. Starting normal operation.\r\n", 44, 100);
+    DAC_SetError();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -189,7 +228,16 @@ int main(void)
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
     if (curr_pos > 0) 
     {
-      HAL_Delay(300);
+      /* Wait for packet to fully arrive — but keep DAC alive every 50ms.
+       * HAL_Delay(300) was blocking DAC_Refresh and causing SPI timeout (100ms). */
+      {
+        uint32_t wait_start = HAL_GetTick();
+        while (HAL_GetTick() - wait_start < 300)
+        {
+          DAC_Refresh();
+          HAL_Delay(50);
+        }
+      }
       curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
       if (curr_pos >= sizeof(sensor_rx_buf)) curr_pos = sizeof(sensor_rx_buf) - 1;
       sensor_rx_buf[curr_pos] = '\0';

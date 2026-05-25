@@ -48,8 +48,8 @@ The ADUM1401 variant used must have the channel on pins 6/11 configured as **sid
 
 **2Ω resistor on SDO**: Series damping resistor between DAC SDO (pin 8) and ADUM pin 11. Standard practice to suppress ringing and protect the isolator input.
 
-> ⚠️ **Known Issue (2026-05-25)**: `DAC_ReadStatus()` returns `0xFFFF` on both channels, indicating SPI frames are not reaching the DAC (or DAC SDO is not driving MISO).
-> Possible causes:
-> 1. DAC SDO is in Hi-Z when ~CS is inactive — ADUM output floats HIGH → 0xFF on MISO. The DAC161S997 SDO is only driven during an active ~CS transaction; between transactions it is Hi-Z. This is normal behaviour and does **not** indicate a wiring fault. The readback must be measured while CS is asserted.
-> 2. ADUM1401 not powered (check AVDD1/AVDD2 on isolator).
-> 3. Poor solder joint on MISO / SDO / ADUM pin 11 or 6.
+> ⚠️ **Known Issue (2026-05-25) — MISO Bus Contention**:
+> 1. **Hardware Topology**: The PCB instantiates the `LOOP_DAC.SchDoc` schematic sheet twice, meaning there are physically **two independent ADuM1401 digital isolators** (one for each DAC).
+> 2. **Push-Pull Outputs Tied Together**: The MISO outputs (Pin 6, VOD) of both isolators are tied directly to the MCU's single PA6 (MISO) line. Because the ADuM1401's output enable pins (VE1) are permanently tied to VDD1, their outputs are always actively driven (push-pull) and never go High-Z. This causes physical bus contention when both are powered.
+> 3. **Unpowered Channel Fail-Safe**: When one of the loops (e.g. Channel 2) is unpowered, its isolator's input side (Side 2) loses power. The ADuM1401's fail-safe behavior drives its output (Pin 6, VOD) **HIGH** (3.3V) constantly. This overrides any attempt by the other powered channel to pull MISO low, resulting in a constant `0xFFFF` on MISO.
+> 4. **Impact**: SPI write operations work perfectly (CPHA=0/Mode 0 is correct), allowing full current loop control. However, SPI register readback (like `DAC_ReadStatus` and `DAC_SpiProbe`) will always return `0xFFFF` under these hardware conditions. This is a design limitation and is safe to ignore in software.

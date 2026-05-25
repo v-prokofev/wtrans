@@ -82,9 +82,26 @@ static void DAC_WriteReg(uint8_t channel, uint8_t addr, uint16_t data)
     DAC_TransceiveReg(channel, addr, data, NULL);
 }
 
+/* 
+ * Optional software calibration to compensate for systematic board offsets.
+ * Under these settings:
+ *   - Target 4.0 mA  -> calibrated to DAC code for 1.30 mA -> physical loop current matches ~4.0 mA.
+ *   - Target 20.0 mA -> calibrated to DAC code for 17.92 mA -> physical loop current matches ~20.0 mA.
+ */
+#define CALIBRATION_ENABLED 0   /* Set to 1 to enable software calibration */
+#define CAL_SLOPE           0.9625f
+#define CAL_OFFSET          2.75f
+
 /** Convert mA to a 16-bit DAC code. Input is clamped to [0, 24] mA. */
 static uint16_t mA_to_code(float mA)
 {
+#if CALIBRATION_ENABLED
+    /* y = (x - offset) / slope */
+    float calibrated_mA = (mA - CAL_OFFSET) / CAL_SLOPE;
+    if (calibrated_mA < 0.0f) calibrated_mA = 0.0f;
+    mA = calibrated_mA;
+#endif
+
     if (mA < 0.0f)  mA = 0.0f;
     if (mA > DAC_CURRENT_FULLSCALE_MA) mA = DAC_CURRENT_FULLSCALE_MA;
     uint32_t code = (uint32_t)((mA / DAC_CURRENT_FULLSCALE_MA) * 65536.0f);

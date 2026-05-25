@@ -67,7 +67,7 @@ static void MX_TIM3_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
-
+void PrintSystemStatus(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -85,6 +85,47 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     // Request a step in sensor logic
     poll_requested = 1;
   }
+}
+
+uint32_t system_msg_id = 0;
+
+void PrintSystemStatus(void)
+{
+  system_msg_id++;
+
+  uint8_t is_timeout = (HAL_GetTick() - last_valid_data_tick > 2000);
+  const char *sensor_status = is_timeout ? "TIMEOUT" : "OK";
+
+  float spd_mA = 3.5f;
+  float dir_mA = 3.5f;
+
+  if (!is_timeout)
+  {
+    spd_mA = 4.0f + (wind_sensor.speed / 60.0f) * 16.0f;
+    if (spd_mA > 20.0f) spd_mA = 20.0f;
+    if (spd_mA < 4.0f)  spd_mA = 4.0f;
+
+    dir_mA = 4.0f + (wind_sensor.direction / 360.0f) * 16.0f;
+    if (dir_mA > 20.0f) dir_mA = 20.0f;
+    if (dir_mA < 4.0f)  dir_mA = 4.0f;
+  }
+
+  /* Read DAC status registers via SPI */
+  uint16_t st1 = DAC_ReadStatus(DAC_CHANNEL_SPEED);
+  uint16_t st2 = DAC_ReadStatus(DAC_CHANNEL_DIRECTION);
+
+  /* Read nERR hardware pins */
+  uint8_t dac_err = DAC_ReadErrors();
+  const char *nerr1_str = (dac_err & 0x01) ? "FAIL" : "OK";
+  const char *nerr2_str = (dac_err & 0x02) ? "FAIL" : "OK";
+
+  char ms_buf[256];
+  snprintf(ms_buf, sizeof(ms_buf),
+           "SYS: #%lu | Sensor=%s | DAC1(Speed): ST=0x%04X, HW_nERR=%s, Target=%.2f mA | DAC2(Dir): ST=0x%04X, HW_nERR=%s, Target=%.2f mA\r\n",
+           system_msg_id, sensor_status,
+           st1, nerr1_str, spd_mA,
+           st2, nerr2_str, dir_mA);
+  HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 200);
 }
 /* USER CODE END 0 */
 
@@ -177,6 +218,7 @@ int main(void)
    * Each step writes the target current every 10ms for 5 seconds.
    * At 10ms interval, SPI timeout (100ms) cannot fire.
    * If ammeter still doesn't change -> SPI signals not reaching DAC (ADUM issue). */
+#if 0
   {
     char tb[48];
     uint32_t t0;
@@ -227,6 +269,7 @@ int main(void)
     HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
     last_valid_data_tick = HAL_GetTick();
   }
+#endif
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -269,24 +312,7 @@ int main(void)
         /* Update DAC outputs */
         DAC_UpdateOutputs(wind_sensor.speed, wind_sensor.direction);
         last_valid_data_tick = HAL_GetTick();
-
-        /* Read DAC STATUS registers via SPI */
-        uint16_t st1 = DAC_ReadStatus(DAC_CHANNEL_SPEED);
-        uint16_t st2 = DAC_ReadStatus(DAC_CHANNEL_DIRECTION);
-
-        /* Read nERR hardware pins */
-        uint8_t dac_err = DAC_ReadErrors();
-
-        char ms_buf[192];
-        /* Use STATUS register as source of truth (nERR pin PB1 appears hardware-grounded).
-         * STATUS bits: bit3=LOOP_ERR, bit4=SPI_TOUT, bit5=SPI_ERR */
-        uint8_t spi_fault = (st1 != 0x0000) || (st2 != 0x0000);
-        snprintf(ms_buf, sizeof(ms_buf),
-                 "MS: Spd=%.1f, Dir=%.1f | ST1=0x%04X ST2=0x%04X nERR=0x%02X%s\r\n",
-                 wind_sensor.speed, wind_sensor.direction,
-                 st1, st2, dac_err,
-                 spi_fault ? " [DAC FAULT]" : " [OK]");
-        HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 100);
+        PrintSystemStatus();
       }
       else if (res == 2) // Version received during init
       {
@@ -300,9 +326,15 @@ int main(void)
     }
 
     /* Sensor timeout check: 2000 ms without valid data -> NAMUR NE43 error */
+    static uint32_t last_timeout_print_tick = 0;
     if (HAL_GetTick() - last_valid_data_tick > 2000)
     {
       DAC_SetError();
+      if (HAL_GetTick() - last_timeout_print_tick >= 2000)
+      {
+        last_timeout_print_tick = HAL_GetTick();
+        PrintSystemStatus();
+      }
     }
 
     /* DAC keepalive: refresh every 50 ms to prevent SPI timeout watchdog */

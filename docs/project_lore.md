@@ -37,11 +37,11 @@ Signal flow (MCU side → isolator → DAC side):
 
 | Signal | MCU Pin | ADUM1401 Side-1 | ADUM1401 Side-2 | DAC Pin |
 |--------|---------|-----------------|-----------------|---------|
-| SCK    | PA5     | (input)         | (output)        | SCLK    |
-| MOSI   | PA7     | (input)         | (output)        | SDI     |
-| MISO   | PA6     | **pin 6** (output) | **pin 11** (ISO_MISO, input) | pin 8 (SDO), via 2Ω series resistor |
-| CS_DAC1| PB0    | (input)         | (output)        | ~CS DAC1 |
-| CS_DAC2| PA4    | (input)         | (output)        | ~CS DAC2 |
+| CS     | PB0 / PA4 | **pin 3** (VIA, input)  | **pin 14** (VOA, output) | ~CS |
+| SCK    | PA5     | **pin 4** (VIB, input)  | **pin 13** (VOB, output) | SCLK    |
+| MOSI   | PA7     | **pin 5** (VIC, input)  | **pin 12** (VOC, output) | SDI     |
+| MISO   | PA6     | **pin 6** (VOD, output) | **pin 11** (VID, input)  | pin 8 (SDO) via 2Ω |
+| VE1/VE2| —       | **pin 7** (tied to VDD1)| **pin 10** (tied to VDD2)| — |
 
 **MISO channel direction**: Side-2 → Side-1 (DAC → MCU).
 The ADUM1401 variant used must have the channel on pins 6/11 configured as **side-2 input → side-1 output**. This is correct for a standard SPI MISO path.

@@ -173,52 +173,54 @@ int main(void)
     HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 200);
   }
 
-  /* ---- DAC channel self-test ----
-   * Sweeps each channel 4mA→20mA.
-   * Watch the ammeter: the channel with the loop will visibly change current.
-   * Console shows countdown so you know which step is active. */
+  /* ---- DAC channel self-test (rapid-write, no timeout possible) ----
+   * Each step writes the target current every 10ms for 5 seconds.
+   * At 10ms interval, SPI timeout (100ms) cannot fire.
+   * If ammeter still doesn't change -> SPI signals not reaching DAC (ADUM issue). */
   {
-    /* Wait-with-keepalive and second-by-second countdown on UART3 */
-    #define DAC_WAIT_COUNTED(ms, label) do { \
-      uint32_t _t0 = HAL_GetTick(); \
-      uint32_t _printed = 0; \
-      char _cb[32]; \
-      while (HAL_GetTick() - _t0 < (ms)) { \
-        uint32_t _elapsed = (HAL_GetTick() - _t0) / 1000; \
-        if (_elapsed != _printed) { \
-          _printed = _elapsed; \
-          snprintf(_cb, sizeof(_cb), "  %s: %lus\r\n", label, _elapsed + 1); \
-          HAL_UART_Transmit(&huart3, (uint8_t *)_cb, strlen(_cb), 50); \
-        } \
-        DAC_Refresh(); HAL_Delay(50); \
-      } \
-    } while(0)
+    char tb[48];
+    uint32_t t0;
 
-    /* --- DAC1: Speed channel (CS = PB0) --- */
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 (Speed/PB0): 4mA\r\n", 28, 100);
-    DAC_SetCurrent(DAC_CHANNEL_SPEED, 4.0f);
-    DAC_WAIT_COUNTED(5000, "DAC1=4mA");
+    #define BLAST_MS 5000   /* 5 seconds per step */
+    #define BLAST_INTERVAL 10  /* write every 10ms */
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 (Speed/PB0): 20mA\r\n", 29, 100);
-    DAC_SetCurrent(DAC_CHANNEL_SPEED, 20.0f);
-    DAC_WAIT_COUNTED(5000, "DAC1=20mA");
+    /* DAC1 = 4 mA */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1=4mA (5s)...\r\n", 23, 100);
+    t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < BLAST_MS) {
+      DAC_SetCurrent(DAC_CHANNEL_SPEED, 4.0f);
+      HAL_Delay(BLAST_INTERVAL);
+    }
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1 done.\r\n", 16, 100);
+    /* DAC1 = 20 mA */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC1=20mA (5s)...\r\n", 24, 100);
+    t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < BLAST_MS) {
+      DAC_SetCurrent(DAC_CHANNEL_SPEED, 20.0f);
+      HAL_Delay(BLAST_INTERVAL);
+    }
+
+    /* DAC2 = 4 mA */
     DAC_SetError();
-    DAC_WAIT_COUNTED(1000, "pause");
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2=4mA (5s)...\r\n", 23, 100);
+    t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < BLAST_MS) {
+      DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 4.0f);
+      HAL_Delay(BLAST_INTERVAL);
+    }
 
-    /* --- DAC2: Direction channel (CS = PA4) --- */
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 (Dir/PA4): 4mA\r\n", 26, 100);
-    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 4.0f);
-    DAC_WAIT_COUNTED(5000, "DAC2=4mA");
+    /* DAC2 = 20 mA */
+    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2=20mA (5s)...\r\n", 24, 100);
+    t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < BLAST_MS) {
+      DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 20.0f);
+      HAL_Delay(BLAST_INTERVAL);
+    }
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 (Dir/PA4): 20mA\r\n", 27, 100);
-    DAC_SetCurrent(DAC_CHANNEL_DIRECTION, 20.0f);
-    DAC_WAIT_COUNTED(5000, "DAC2=20mA");
+    snprintf(tb, sizeof(tb), "TEST done. nERR=0x%02X\r\n", DAC_ReadErrors());
+    HAL_UART_Transmit(&huart3, (uint8_t *)tb, strlen(tb), 100);
 
-    HAL_UART_Transmit(&huart3, (uint8_t *)"TEST DAC2 done. Starting normal op.\r\n", 36, 100);
-
-    /* Flush DMA buffer: sensor was sending during the test, discard stale data */
+    /* Flush sensor DMA buffer accumulated during test */
     DAC_SetError();
     memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
     HAL_UART_AbortReceive(&huart2);
@@ -585,7 +587,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.Direction         = SPI_DIRECTION_2LINES;
   hspi1.Init.DataSize          = SPI_DATASIZE_8BIT;
   hspi1.Init.CLKPolarity       = SPI_POLARITY_LOW;   /* CPOL=0 */
-  hspi1.Init.CLKPhase          = SPI_PHASE_2EDGE;    /* CPHA=1 */
+  hspi1.Init.CLKPhase          = SPI_PHASE_1EDGE;    /* CPHA=0 (DAC161S997 clocks on rising edge) */
   hspi1.Init.NSS               = SPI_NSS_SOFT;
   hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_64; /* 72MHz/64 = 1.125 MHz */
   hspi1.Init.FirstBit          = SPI_FIRSTBIT_MSB;

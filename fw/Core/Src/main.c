@@ -147,6 +147,18 @@ int main(void)
   /* Send startup message */
   char *msg = "\r\n--- WindTrans System Started ---\r\n";
   HAL_UART_Transmit(&huart3, (uint8_t *)msg, strlen(msg), 100);
+
+  /* ---- SPI self-check: read STATUS from both DAC channels ---- */
+  {
+    char dbg[128];
+    uint16_t st1 = DAC_ReadStatus(DAC_CHANNEL_SPEED);
+    uint16_t st2 = DAC_ReadStatus(DAC_CHANNEL_DIRECTION);
+    snprintf(dbg, sizeof(dbg),
+             "INIT: DAC1_ST=0x%04X DAC2_ST=0x%04X nERR=0x%02X\r\n"
+             "  (0xFFFF = SPI not reaching chip; 0x0000 = OK)\r\n",
+             st1, st2, DAC_ReadErrors());
+    HAL_UART_Transmit(&huart3, (uint8_t *)dbg, strlen(dbg), 200);
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */

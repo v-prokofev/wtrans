@@ -27,3 +27,29 @@
     - **Low-priority Timer (TIM3)**: 5 Hz (200ms period). Handles heartbeat LED (PA9) and debug console output (UART3).
     - **High-priority Timer (TIM2)**: 1 Hz (1s period). Handles sensor polling (UART2).
     - **Optional DAC Update Timer**: If synchronization is critical, a separate timer or a faster tick will be used to update DAC outputs.
+
+## Hardware Topology
+
+### SPI Isolation via ADUM1401
+
+The SPI bus between the STM32 and the DAC161S997 chips passes through an **ADUM1401** galvanic isolator.
+Signal flow (MCU side → isolator → DAC side):
+
+| Signal | MCU Pin | ADUM1401 Side-1 | ADUM1401 Side-2 | DAC Pin |
+|--------|---------|-----------------|-----------------|---------|
+| SCK    | PA5     | (input)         | (output)        | SCLK    |
+| MOSI   | PA7     | (input)         | (output)        | SDI     |
+| MISO   | PA6     | **pin 6** (output) | **pin 11** (ISO_MISO, input) | pin 8 (SDO), via 2Ω series resistor |
+| CS_DAC1| PB0    | (input)         | (output)        | ~CS DAC1 |
+| CS_DAC2| PA4    | (input)         | (output)        | ~CS DAC2 |
+
+**MISO channel direction**: Side-2 → Side-1 (DAC → MCU).
+The ADUM1401 variant used must have the channel on pins 6/11 configured as **side-2 input → side-1 output**. This is correct for a standard SPI MISO path.
+
+**2Ω resistor on SDO**: Series damping resistor between DAC SDO (pin 8) and ADUM pin 11. Standard practice to suppress ringing and protect the isolator input.
+
+> ⚠️ **Known Issue (2026-05-25)**: `DAC_ReadStatus()` returns `0xFFFF` on both channels, indicating SPI frames are not reaching the DAC (or DAC SDO is not driving MISO).
+> Possible causes:
+> 1. DAC SDO is in Hi-Z when ~CS is inactive — ADUM output floats HIGH → 0xFF on MISO. The DAC161S997 SDO is only driven during an active ~CS transaction; between transactions it is Hi-Z. This is normal behaviour and does **not** indicate a wiring fault. The readback must be measured while CS is asserted.
+> 2. ADUM1401 not powered (check AVDD1/AVDD2 on isolator).
+> 3. Poor solder joint on MISO / SDO / ADUM pin 11 or 6.

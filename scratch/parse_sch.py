@@ -1,25 +1,18 @@
-import re
+import os
+import json
 
-def trace_ve1_net():
-    filepath = r"c:\src\VNIIM\wtrans\pcb\LOOP_DAC.SchDoc"
-    with open(filepath, 'rb') as f:
-        data = f.read()
-    
-    records = data.split(b'|')
-    # Let's find VU1 pin 7 and see its PinUniqueId or Net connection.
-    # In Altium, pins are connected to nets via Pin records or Net Labels.
-    # Let's look for records that mention VU1 or pin 7 or VE1.
-    for i, r in enumerate(records):
-        if b'VE1' in r or b'VU1' in r:
+log_path = r"C:\Users\fml30\.gemini\antigravity-ide\brain\2527eb3b-1d2f-463b-bf34-8041c96a9ea4\.system_generated\logs\transcript.jsonl"
+
+print(f"--- Searching logs at {log_path} ---")
+if os.path.exists(log_path):
+    with open(log_path, 'r', encoding='utf-8') as f:
+        for line in f:
             try:
-                text = r.decode('ascii', errors='replace').strip()
-                if 'VE1' in text or 'VU1' in text:
-                    print(f"Record {i}: {text}")
-                    # Print surrounding records
-                    for j in range(max(0, i-3), min(len(records), i+4)):
-                        print(f"  [{j}]: {records[j].decode('ascii', errors='replace').strip()}")
-                    print("-" * 50)
+                obj = json.loads(line)
+                content = obj.get('content', '')
+                if '3.9' in content or '3,9' in content or '3.5' in content or '3,5' in content:
+                    print(f"[{obj.get('source')}] {content[:200]}...")
             except Exception as e:
                 pass
-
-trace_ve1_net()
+else:
+    print("Log path does not exist.")

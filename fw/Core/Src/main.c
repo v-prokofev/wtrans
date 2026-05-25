@@ -94,18 +94,24 @@ void PrintSystemStatus(void)
   system_msg_id++;
 
   uint8_t is_timeout = (HAL_GetTick() - last_valid_data_tick > 2000);
-  const char *sensor_status = is_timeout ? "TIMEOUT" : "OK";
+  const char *sensor_status = is_timeout ? "ER" : "OK";
 
   float spd_mA = 3.5f;
   float dir_mA = 3.5f;
 
+  float spd_val = 0.0f;
+  float dir_val = 0.0f;
+
   if (!is_timeout)
   {
-    spd_mA = 4.0f + (wind_sensor.speed / 60.0f) * 16.0f;
+    spd_val = wind_sensor.speed;
+    dir_val = wind_sensor.direction;
+
+    spd_mA = 4.0f + (spd_val / 60.0f) * 16.0f;
     if (spd_mA > 20.0f) spd_mA = 20.0f;
     if (spd_mA < 4.0f)  spd_mA = 4.0f;
 
-    dir_mA = 4.0f + (wind_sensor.direction / 360.0f) * 16.0f;
+    dir_mA = 4.0f + (dir_val / 360.0f) * 16.0f;
     if (dir_mA > 20.0f) dir_mA = 20.0f;
     if (dir_mA < 4.0f)  dir_mA = 4.0f;
   }
@@ -116,15 +122,14 @@ void PrintSystemStatus(void)
 
   /* Read nERR hardware pins */
   uint8_t dac_err = DAC_ReadErrors();
-  const char *nerr1_str = (dac_err & 0x01) ? "FAIL" : "OK";
-  const char *nerr2_str = (dac_err & 0x02) ? "FAIL" : "OK";
+  const char *nerr1_str = (dac_err & 0x01) ? "ER" : "OK";
+  const char *nerr2_str = (dac_err & 0x02) ? "ER" : "OK";
 
   char ms_buf[256];
   snprintf(ms_buf, sizeof(ms_buf),
-           "SYS: #%lu | Sensor=%s | DAC1(Speed): ST=0x%04X, HW_nERR=%s, Target=%.2f mA | DAC2(Dir): ST=0x%04X, HW_nERR=%s, Target=%.2f mA\r\n",
-           system_msg_id, sensor_status,
-           st1, nerr1_str, spd_mA,
-           st2, nerr2_str, dir_mA);
+           "%lu. |  VEL: %05.1f | %05.2f mA | DIR: %05.1f | %05.2f mA | S: %s %s %s | SPI %04X %04X |\r\n",
+           system_msg_id, spd_val, spd_mA, dir_val, dir_mA,
+           sensor_status, nerr1_str, nerr2_str, st1, st2);
   HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 200);
 }
 /* USER CODE END 0 */

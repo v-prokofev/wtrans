@@ -127,7 +127,7 @@ void PrintSystemStatus(void)
 
   char ms_buf[256];
   snprintf(ms_buf, sizeof(ms_buf),
-           "%lu. |  VEL: %05.1f | %05.2f mA | DIR: %05.1f | %05.2f mA | S: %s %s %s | SPI %04X %04X |\r\n",
+           "%lu. |  VEL: %+05.1f | %+06.2f mA | DIR: %05.1f | %+06.2f mA | S: %s %s %s | SPI %04X %04X |\r\n",
            system_msg_id, spd_val, spd_mA, dir_val, dir_mA,
            sensor_status, nerr1_str, nerr2_str, st1, st2);
   HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 200);

@@ -118,7 +118,7 @@ void Sensor_Step(Sensor_t *sensor, UART_HandleTypeDef *huart) {
             break;
 
         case SENSOR_READY_POLL:
-            snprintf(cmd, sizeof(cmd), "M1\r\n");
+            snprintf(cmd, sizeof(cmd), "M\r\n");
             Sensor_Send(huart, cmd);
             break;
             

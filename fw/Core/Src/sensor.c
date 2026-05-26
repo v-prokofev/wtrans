@@ -30,6 +30,13 @@ static void Sensor_Send(UART_HandleTypeDef *huart, char *cmd) {
 int Sensor_Parse(Sensor_t *sensor, char *buffer) {
     if (!buffer || strlen(buffer) < 5) return 0;
 
+    // Option D: Version response check (for init) - check first to avoid digit-overlap conflicts in version string
+    if (sensor->state == SENSOR_INIT_GET_VER) {
+        if (strstr(buffer, "DVU") || strstr(buffer, "VER")) {
+            return 2; 
+        }
+    }
+
     char *parse_ptr = NULL;
     
     // Option A: Response with @id:0 prefix (Network mode)
@@ -60,6 +67,15 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
             sensor->direction = d_act;
             return 1;
         }
+
+        // Try parsing 3 fields (M 1 message: id, speed, direction)
+        int parsed_id;
+        float s_val, d_val;
+        if (sscanf(parse_ptr, "%d %f %f", &parsed_id, &s_val, &d_val) == 3) {
+            sensor->speed = s_val;
+            sensor->direction = d_val;
+            return 1;
+        }
     }
 
     // Option C: Spd= Dir= debug line
@@ -69,13 +85,6 @@ int Sensor_Parse(Sensor_t *sensor, char *buffer) {
         if (sscanf(spd_ptr, "Spd=%f", &sensor->speed) == 1 && 
             sscanf(dir_ptr, "Dir=%f", &sensor->direction) == 1) {
             return 1;
-        }
-    }
-
-    // Option D: Version response check (for init)
-    if (sensor->state == SENSOR_INIT_GET_VER) {
-        if (strstr(buffer, "DVU") || strstr(buffer, "VER")) {
-            return 2; 
         }
     }
 
@@ -118,7 +127,7 @@ void Sensor_Step(Sensor_t *sensor, UART_HandleTypeDef *huart) {
             break;
 
         case SENSOR_READY_POLL:
-            snprintf(cmd, sizeof(cmd), "M\r\n");
+            snprintf(cmd, sizeof(cmd), "M 1\r\n");
             Sensor_Send(huart, cmd);
             break;
             

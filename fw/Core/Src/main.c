@@ -23,8 +23,10 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include "sensor.h"
 #include "dac.h"
+#include "version.h"   /* Auto-generated: FW_VERSION, FW_VERSION_BUILD, etc. */
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -34,6 +36,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/* FW_VERSION is defined in version.h (auto-updated by pre-commit hook) */
+#define DBG_CMD_BUF_LEN  64
+#define DAC_OVERRIDE_MS  60000U   /* 60 seconds override duration */
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -55,6 +60,14 @@ uint8_t sensor_rx_buf[256];
 uint8_t poll_requested = 0;
 /* USER CODE BEGIN PV */
 uint32_t last_valid_data_tick = 0;  /* For 2-second sensor timeout */
+
+/* --- Debug menu state --- */
+static char     dbg_cmd_buf[DBG_CMD_BUF_LEN];  /* line accumulation buffer */
+static uint8_t  dbg_cmd_pos = 0;               /* write position in buffer */
+
+/* DAC override: when active, normal sensor output is suppressed */
+static uint8_t  dac_override_active = 0;        /* 1 = override in effect */
+static uint32_t dac_override_tick   = 0;        /* timestamp of override start */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -68,6 +81,8 @@ static void MX_USART3_UART_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 void PrintSystemStatus(void);
+static void DebugConsole_Poll(void);
+static void DebugConsole_ProcessCmd(const char *cmd);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -131,6 +146,123 @@ void PrintSystemStatus(void)
            system_msg_id, spd_val, spd_mA, dir_val, dir_mA,
            sensor_status, nerr1_str, nerr2_str, st1, st2);
   HAL_UART_Transmit(&huart3, (uint8_t *)ms_buf, strlen(ms_buf), 200);
+}
+
+/**
+  * @brief Poll UART3 RX for debug console input (non-blocking, 1 byte at a time).
+  *        Accumulates characters into dbg_cmd_buf; processes on newline (\n or \r).
+  */
+static void DebugConsole_Poll(void)
+{
+  uint8_t rx_byte;
+  /* HAL_UART_Receive with timeout=0: returns HAL_OK only if a byte is available */
+  while (HAL_UART_Receive(&huart3, &rx_byte, 1, 0) == HAL_OK)
+  {
+    if (rx_byte == '\r' || rx_byte == '\n')
+    {
+      if (dbg_cmd_pos > 0)
+      {
+        dbg_cmd_buf[dbg_cmd_pos] = '\0';
+        DebugConsole_ProcessCmd(dbg_cmd_buf);
+        dbg_cmd_pos = 0;
+      }
+    }
+    else if (rx_byte == '\b' || rx_byte == 0x7F) /* backspace */
+    {
+      if (dbg_cmd_pos > 0) dbg_cmd_pos--;
+    }
+    else if (dbg_cmd_pos < (DBG_CMD_BUF_LEN - 1))
+    {
+      dbg_cmd_buf[dbg_cmd_pos++] = (char)rx_byte;
+    }
+  }
+}
+
+/**
+  * @brief Process a complete debug command line.
+  *
+  *  version         — print firmware version
+  *  set_dac1 NNNN  — override DAC1 (speed) to NNNN * 0.1 mA for 60 s
+  *                   e.g. set_dac1 2100 -> 21.0 mA, set_dac1 350 -> 3.5 mA
+  *  set_dac2 NNNN  — same for DAC2 (direction)
+  *  continue        — cancel override immediately, resume normal operation
+  *
+  *  Valid range: 3.5 ... 20.0 mA  (NNNN = 350 ... 2000).
+  *  Values outside this range are rejected with an error message.
+  */
+static void DebugConsole_ProcessCmd(const char *cmd)
+{
+  char reply[80];
+
+  /* --- version --- */
+  if (strcmp(cmd, "version") == 0)
+  {
+    snprintf(reply, sizeof(reply), "OK WindTrans fw v" FW_VERSION "\r\n");
+    HAL_UART_Transmit(&huart3, (uint8_t *)reply, strlen(reply), 100);
+    return;
+  }
+
+  /* --- continue --- */
+  if (strcmp(cmd, "continue") == 0)
+  {
+    dac_override_active = 0;
+    HAL_UART_Transmit(&huart3, (uint8_t *)"OK\r\n", 4, 100);
+    return;
+  }
+
+  /* --- set_dac1 / set_dac2 --- */
+  int   ch   = -1;
+  long  val  = 0;
+  char  arg_str[16] = {0};
+
+  if (strncmp(cmd, "set_dac1 ", 9) == 0)
+  {
+    ch = DAC_CHANNEL_SPEED;
+    strncpy(arg_str, cmd + 9, sizeof(arg_str) - 1);
+  }
+  else if (strncmp(cmd, "set_dac2 ", 9) == 0)
+  {
+    ch = DAC_CHANNEL_DIRECTION;
+    strncpy(arg_str, cmd + 9, sizeof(arg_str) - 1);
+  }
+
+  if (ch >= 0)
+  {
+    char *endptr;
+    val = strtol(arg_str, &endptr, 10);
+
+    /* Reject if no digits were parsed */
+    if (endptr == arg_str)
+    {
+      HAL_UART_Transmit(&huart3, (uint8_t *)"ERR bad argument\r\n", 18, 100);
+      return;
+    }
+
+    /* val is in units of 0.1 mA: range 350..2000 => 3.5..20.0 mA */
+    if (val < 350 || val > 2000)
+    {
+      snprintf(reply, sizeof(reply),
+               "ERR current out of range (3.5..20.0 mA), got %ld (=%ld.%01ld mA)\r\n",
+               val, val / 100, (val % 100) / 10);
+      HAL_UART_Transmit(&huart3, (uint8_t *)reply, strlen(reply), 150);
+      return;
+    }
+
+    float mA = (float)val / 100.0f;
+    DAC_SetCurrent((uint8_t)ch, mA);
+    dac_override_active = 1;
+    dac_override_tick   = HAL_GetTick();
+
+    snprintf(reply, sizeof(reply),
+             "OK DAC%d set to %ld.%02ld mA (override 60s)\r\n",
+             (ch == DAC_CHANNEL_SPEED) ? 1 : 2,
+             val / 100, val % 100);
+    HAL_UART_Transmit(&huart3, (uint8_t *)reply, strlen(reply), 150);
+    return;
+  }
+
+  /* Unknown command */
+  HAL_UART_Transmit(&huart3, (uint8_t *)"ERR unknown command\r\n", 21, 100);
 }
 /* USER CODE END 0 */
 
@@ -281,6 +413,17 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
+    /* --- Debug console: poll for incoming commands on UART3 --- */
+    DebugConsole_Poll();
+
+    /* --- Override expiry: after 60s return to normal operation --- */
+    if (dac_override_active &&
+        (HAL_GetTick() - dac_override_tick >= DAC_OVERRIDE_MS))
+    {
+      dac_override_active = 0;
+      HAL_UART_Transmit(&huart3, (uint8_t *)"INFO override expired, resuming normal mode\r\n", 45, 100);
+    }
+
     // 1. Handle outgoing requests (1Hz)
     if (poll_requested)
     {
@@ -288,9 +431,9 @@ int main(void)
       Sensor_Step(&wind_sensor, &huart2);
     }
 
-    // 2. Handle incoming data
+    // 2. Handle incoming sensor data
     uint16_t curr_pos = sizeof(sensor_rx_buf) - __HAL_DMA_GET_COUNTER(&hdma_usart2_rx);
-    if (curr_pos > 0) 
+    if (curr_pos > 0)
     {
       /* Wait for packet to fully arrive — but keep DAC alive every 50ms.
        * HAL_Delay(300) was blocking DAC_Refresh and causing SPI timeout (100ms). */
@@ -314,8 +457,11 @@ int main(void)
       int res = Sensor_Parse(&wind_sensor, (char*)sensor_rx_buf);
       if (res == 1) // Data parsed successfully
       {
-        /* Update DAC outputs */
-        DAC_UpdateOutputs(wind_sensor.speed, wind_sensor.direction);
+        /* Update DAC outputs only when no manual override is in effect */
+        if (!dac_override_active)
+        {
+          DAC_UpdateOutputs(wind_sensor.speed, wind_sensor.direction);
+        }
         last_valid_data_tick = HAL_GetTick();
         PrintSystemStatus();
       }
@@ -330,9 +476,10 @@ int main(void)
       HAL_UART_Receive_DMA(&huart2, sensor_rx_buf, sizeof(sensor_rx_buf));
     }
 
-    /* Sensor timeout check: 2000 ms without valid data -> NAMUR NE43 error */
+    /* Sensor timeout check: 2000 ms without valid data -> NAMUR NE43 error
+     * Suppressed during manual DAC override (operator knows what they're doing). */
     static uint32_t last_timeout_print_tick = 0;
-    if (HAL_GetTick() - last_valid_data_tick > 2000)
+    if (!dac_override_active && (HAL_GetTick() - last_valid_data_tick > 2000))
     {
       DAC_SetError();
       if (HAL_GetTick() - last_timeout_print_tick >= 2000)

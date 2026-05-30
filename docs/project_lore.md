@@ -27,6 +27,24 @@
     - **Low-priority Timer (TIM3)**: 5 Hz (200ms period). Handles heartbeat LED (PA9) and debug console output (UART3).
     - **High-priority Timer (TIM2)**: 1 Hz (1s period). Handles sensor polling (UART2).
     - **Optional DAC Update Timer**: If synchronization is critical, a separate timer or a faster tick will be used to update DAC outputs.
+- **[2026-05-30] Debug Console Menu (fw v1.1.0)**:
+    - The debug RS-485 port (X3 / UART3, PB10=TX, PB11=RX, 115200 8N1) now accepts text commands.
+    - Commands are polled non-blocking in the main loop via `DebugConsole_Poll()` / `DebugConsole_ProcessCmd()`.
+    - Supported commands:
+        - `version` → responds `OK WindTrans fw v1.1.0`
+        - `set_dac1 NNNN` → forces DAC1 (speed) to `NNNN/100` mA for 60 seconds, then resumes normal mode. e.g. `set_dac1 2100` = 21.00 mA.
+        - `set_dac2 NNNN` → same for DAC2 (direction).
+        - `continue` → immediately cancels any active override, returns to normal mode.
+    - **Valid current range**: 3.5 … 20.0 mA (argument 350 … 2000). Values outside this range are rejected with `ERR current out of range`.
+    - All successful commands respond with `OK` (possibly with additional detail on the same line).
+    - While override is active: sensor DAC output is frozen (DAC_UpdateOutputs is bypassed), and sensor-timeout error detection is suppressed.
+    - Override expiry is announced with `INFO override expired, resuming normal mode`.
+- **[2026-05-30] Auto-versioning via git pre-commit hook**:
+    - `fw/Core/Inc/version.h` — tracked file, auto-generated on every commit. Defines `FW_VERSION_MAJOR`, `FW_VERSION_MINOR`, `FW_VERSION_BUILD`, `FW_VERSION` (string, e.g. `"1.1.047"`).
+    - `scripts/hooks/pre-commit` — bash hook (tracked). Reads current commit count, writes `BUILD = count + 1`, regenerates `version.h`, runs `git add version.h`.
+    - `scripts/install_hooks.ps1` — copies hooks from `scripts/hooks/` into `.git/hooks/`. Run once after cloning.
+    - MAJOR/MINOR are hardcoded in `pre-commit`; edit there and commit to bump them.
+    - `main.c` includes `version.h`; `FW_VERSION` is no longer defined inline.
 
 ## Hardware Topology
 

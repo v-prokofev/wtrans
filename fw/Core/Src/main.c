@@ -455,8 +455,11 @@ int main(void)
       HAL_UART_Transmit(&huart3, (uint8_t *)"\r\n", 2, 10);
 
       int res = Sensor_Parse(&wind_sensor, (char*)sensor_rx_buf);
-      if (res == 1) // Data parsed successfully
+      if (res == 1) // Data parsed successfully (AMES packet or any measurement)
       {
+        /* Mark AMES data timestamp — used by Sensor_Step timeout watchdog */
+        wind_sensor.ames_last_data = HAL_GetTick();
+
         /* Update DAC outputs only when no manual override is in effect */
         if (!dac_override_active)
         {
@@ -467,8 +470,8 @@ int main(void)
       }
       else if (res == 2) // Version received during init
       {
-        HAL_UART_Transmit(&huart3, (uint8_t *)"MS: Sensor Verified! Switching to Poll mode.\r\n", 46, 100);
-        wind_sensor.state = SENSOR_READY_POLL;
+        HAL_UART_Transmit(&huart3, (uint8_t *)"MS: Sensor OK! Starting AMES mode.\r\n", 37, 100);
+        wind_sensor.state = SENSOR_READY_START_AMES;
       }
 
       memset(sensor_rx_buf, 0, sizeof(sensor_rx_buf));
@@ -477,7 +480,10 @@ int main(void)
     }
 
     /* Sensor timeout check: 2000 ms without valid data -> NAMUR NE43 error
-     * Suppressed during manual DAC override (operator knows what they're doing). */
+     * Suppressed during manual DAC override (operator knows what they're doing).
+     * In AMES mode: Sensor_Step handles restart internally via ames_last_data (5 s).
+     * We additionally print a warning and clear ames_last_data on 2 s timeout
+     * so that the 5 s watchdog inside Sensor_Step sees a clean restart reference. */
     static uint32_t last_timeout_print_tick = 0;
     if (!dac_override_active && (HAL_GetTick() - last_valid_data_tick > 2000))
     {
@@ -485,6 +491,10 @@ int main(void)
       if (HAL_GetTick() - last_timeout_print_tick >= 2000)
       {
         last_timeout_print_tick = HAL_GetTick();
+        if (wind_sensor.state == SENSOR_READY_AMES)
+        {
+          HAL_UART_Transmit(&huart3, (uint8_t *)"WARN: AMES stream lost, will restart config\r\n", 45, 100);
+        }
         PrintSystemStatus();
       }
     }

@@ -15,7 +15,23 @@
 - **[2026-04-27] Range Mapping**:
     - Wind Speed: 0...60 m/s -> 4...20 mA.
     - Wind Direction: 0...360° -> 4...20 mA.
-- **[2026-04-27] Update Rate**: Internal processing and sensor polling at 1 Hz.
+- **[2026-04-27] Update Rate**: Internal processing at 1 Hz. Sensor pushes data at 1 Hz via AMES.
+- **[2026-06-16] Sensor Protocol: AMES mode (было M 1 — ограничение ~50 м/с)**:
+    - Прибор больше не использует поллинг `M 1`. Теперь используется режим автоматической отправки AMES.
+    - **Причина**: команда `M 1` не позволяла датчику передавать скорость выше ~50 м/с.
+    - **Последовательность инициализации**: `@1 AMES 0 0` → `OPEN 1` → `VER` → `@1 AMES 0 1000`
+    - **Формат AMES пакета** (датчик шлёт сам каждые 1000 мс):
+      ```
+      Spd=X.XX Dir=XXX.X vX=X.XX vY=X.XX sq=100 dr1=0 dr2=0 dr3=0 dr4=0 tm1=XXXXX tm2=XXXXX tm3=XXXXX tm4=XXXXX sndx=XXX.X sndy=XXX.X
+      ```
+    - Парсинг через `Sensor_Parse` Option C: поля `Spd=` и `Dir=`.
+    - **Состояния датчика** (`SensorState_t`):
+        - `SENSOR_INIT_STOP_AMES` → посылает `@N AMES 0 0`
+        - `SENSOR_INIT_OPEN` → посылает `OPEN N`
+        - `SENSOR_INIT_GET_VER` → посылает `VER`, ждёт строку с "DVU"
+        - `SENSOR_READY_START_AMES` → посылает `@N AMES 0 1000` (однократно), переходит в AMES
+        - `SENSOR_READY_AMES` → слушает поток, таймаут 5 с → рестарт (`SENSOR_INIT_STOP_AMES`)
+    - `wind_sensor.ames_last_data` обновляется в main.c при каждом успешном `Sensor_Parse`.
 - **[2026-04-27] Interface Mapping**:
     - X2 Connector (RS-485) -> Connected to Sensor (DVU-01). Controlled via UART2 + DMA1 Ch6. Pins: PA0(nRE), PA1(DE).
     - X3 Connector (RS-485) -> Debug/Configuration. Controlled via UART3 (115200 8N1). Pins: PB13(nRE), PB14(DE).

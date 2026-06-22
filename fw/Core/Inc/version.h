@@ -11,8 +11,8 @@
 
 #define FW_VERSION_MAJOR  1
 #define FW_VERSION_MINOR  1
-#define FW_VERSION_BUILD  49
+#define FW_VERSION_BUILD  50
 
-#define FW_VERSION        "1.1.049"
+#define FW_VERSION        "1.1.050"
 
 #endif /* VERSION_H */

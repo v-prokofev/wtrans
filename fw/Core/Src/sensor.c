@@ -132,7 +132,7 @@ void Sensor_Step(Sensor_t *sensor, UART_HandleTypeDef *huart) {
              * ВАЖНО: interval — в СЕКУНДАХ (по протоколу ДВУ-01 А.7.1),
              * диапазон 5..3600 с. Использовали 1000 — это 1000 секунд!
              * Теперь 1 с (1 Гц). Если прибор не принимает <5, использовать 5. */
-            snprintf(cmd, sizeof(cmd), "@%d AMES 0 1\r\n", sensor->id);
+            snprintf(cmd, sizeof(cmd), "AMES 1 1\r\n");
             Sensor_Send(huart, cmd);
             sensor->ames_last_data = now;  /* Grace period: expect first packet within 5s */
             sensor->state = SENSOR_READY_AMES;

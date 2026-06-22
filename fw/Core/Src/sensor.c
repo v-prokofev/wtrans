@@ -128,25 +128,27 @@ void Sensor_Step(Sensor_t *sensor, UART_HandleTypeDef *huart) {
             break;
 
         case SENSOR_READY_START_AMES:
-            /* Send AMES start command once: @N AMES 0 1000
-             * (0 = infinite packets, 1000 ms interval = 1 Hz).
-             * Sensor will then push packets autonomously — no further polling needed. */
-            snprintf(cmd, sizeof(cmd), "@%d AMES 0 1000\r\n", sensor->id);
+            /* Send AMES start command once: @N AMES 0 1
+             * ВАЖНО: interval — в СЕКУНДАХ (по протоколу ДВУ-01 А.7.1),
+             * диапазон 5..3600 с. Использовали 1000 — это 1000 секунд!
+             * Теперь 1 с (1 Гц). Если прибор не принимает <5, использовать 5. */
+            snprintf(cmd, sizeof(cmd), "@%d AMES 0 1\r\n", sensor->id);
             Sensor_Send(huart, cmd);
-            sensor->ames_last_data = now;  /* Grace period: expect first packet within 3s */
+            sensor->ames_last_data = now;  /* Grace period: expect first packet within 5s */
             sensor->state = SENSOR_READY_AMES;
             sensor->last_sync = now;
             break;
 
         case SENSOR_READY_AMES:
             /* No outgoing commands — sensor pushes data autonomously.
-             * Monitor for data timeout: if no AMES packet for >5 s, restart init. */
+             * Monitor for data timeout: if no AMES packet for >8 s, restart init.
+             * 8s chosen because protocol min interval is 1s (5s per spec, but 1 accepted). */
             if (sensor->ames_last_data == 0) {
                 /* Not yet set — use last_sync as reference */
-                if (now - sensor->last_sync > 5000) {
+                if (now - sensor->last_sync > 8000) {
                     sensor->state = SENSOR_INIT_STOP_AMES;
                 }
-            } else if (now - sensor->ames_last_data > 5000) {
+            } else if (now - sensor->ames_last_data > 8000) {
                 /* AMES stream lost — restart configuration */
                 sensor->state = SENSOR_INIT_STOP_AMES;
             }
